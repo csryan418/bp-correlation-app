@@ -9,6 +9,8 @@ import appleHealthRoutes from './appleHealth.js';
 import healthRoutes from './health.js';
 import supplementsRoutes from './supplements.js';
 import savedMealsRoutes from './savedMeals.js';
+import mealsRoutes from './meals.js';
+import sleepRoutes from './sleep.js';
 
 const router = Router();
 
@@ -22,5 +24,7 @@ router.use('/oura', ouraRoutes);
 router.use('/insights', insightsRoutes);
 router.use('/apple-health', appleHealthRoutes);
 router.use('/saved-meals', savedMealsRoutes);
+router.use('/meals', mealsRoutes);
+router.use('/sleep', sleepRoutes);
 
 export default router;

@@ -1,6 +1,6 @@
 .bp-page {
-  padding: 2.75rem 3.25rem;
-  max-width: 48.75rem;
+  padding: 2.75rem 3rem;
+  width: 100%;
 }
 
 .page-header {
@@ -31,6 +31,138 @@
   padding: 1rem 0 0.5rem;
 }
 
+/* ── Shared header row (above two-column layout) ── */
+.bp-period-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+/* ── Two-column layout ── */
+.bp-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.bp-stats-col {
+  flex: 0 0 19rem;
+  position: sticky;
+  top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bp-right-bottom {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Stat cards ── */
+.bp-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.2s;
+}
+
+.bp-stat-card:hover {
+  border-color: var(--border-warm);
+}
+
+.bp-stat-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  margin-bottom: 0.5rem;
+}
+
+.bp-stat-value {
+  font-family: var(--font-heading);
+  font-size: 1.625rem;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 0.125rem;
+}
+
+.bp-stat-unit {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  margin-top: 0.25rem;
+}
+
+.bp-stat-trend {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bp-stat-date {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.3125rem;
+}
+
+.bp-stat-empty {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.bp-stat-skel {
+  height: 5.5rem;
+  border-radius: var(--radius-md);
+}
+
+/* ── Period selector bar ── */
+
+.bp-period-tabs {
+  display: flex;
+  gap: 0.1875rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.1875rem;
+  flex-shrink: 0;
+}
+
+.bp-period-tab {
+  background: none;
+  border: none;
+  padding: 0.3125rem 0.875rem;
+  border-radius: calc(var(--radius-sm) - 0.1875rem);
+  font-size: 0.8125rem;
+  font-family: var(--font-body);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.bp-period-tab:hover {
+  color: var(--text-primary);
+}
+
+.bp-period-tab--active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Table card ── */
 .bp-table-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -97,15 +229,9 @@
   font-size: 0.8125rem !important;
 }
 
-.cell--green {
-  color: var(--green);
-}
-.cell--amber {
-  color: var(--amber);
-}
-.cell--red {
-  color: var(--red);
-}
+.cell--green { color: var(--green); }
+.cell--amber { color: var(--amber); }
+.cell--red   { color: var(--red);   }
 
 .no-reading {
   color: var(--text-muted);
@@ -113,6 +239,7 @@
   line-height: 1;
 }
 
+/* ── Legend ── */
 .bp-legend {
   display: flex;
   align-items: center;
@@ -137,15 +264,9 @@
   flex-shrink: 0;
 }
 
-.legend-dot--green {
-  background: var(--green);
-}
-.legend-dot--amber {
-  background: var(--amber);
-}
-.legend-dot--red {
-  background: var(--red);
-}
+.legend-dot--green { background: var(--green); }
+.legend-dot--amber { background: var(--amber); }
+.legend-dot--red   { background: var(--red);   }
 
 .legend-note {
   font-size: 0.6875rem;
@@ -212,6 +333,29 @@
   font-style: italic;
 }
 
+/* ── Tablet: collapse to single column ── */
+@media (max-width: 1023px) {
+  .bp-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .bp-stats-col {
+    flex: none;
+    width: 100%;
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+
+  .bp-right-bottom {
+    width: 100%;
+  }
+}
+
+/* ── Mobile ── */
 @media (max-width: 899px) {
   .bp-page {
     padding: 1.25rem 1rem;
@@ -221,11 +365,21 @@
     font-size: 1.625rem;
   }
 
+  .bp-stats-col {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .bp-table--desktop {
     display: none;
   }
 
   .bp-list--mobile {
     display: block;
+  }
+}
+
+@media (max-width: 479px) {
+  .bp-stats-col {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,0 +1,316 @@
+.sr-page {
+  padding: 2.75rem 3rem;
+  width: 100%;
+}
+
+.sr-page-header {
+  margin-bottom: 2.25rem;
+}
+
+.page-title {
+  font-family: var(--font-heading);
+  font-size: 2.5rem;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.page-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 300;
+  letter-spacing: 0.02em;
+}
+
+/* Three equal columns for the trend charts, then full-width correlation card */
+.sr-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.125rem;
+  align-items: stretch;
+}
+
+/* ── Card base ── */
+.sr-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  min-height: 16rem;
+}
+
+.sr-card:hover {
+  border-color: var(--border-warm);
+}
+
+.sr-card--correlation {
+  grid-column: 1 / -1;
+  min-height: auto;
+  padding: 1.5rem 1.75rem;
+}
+
+.sr-card-title {
+  font-size: 0.6875rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.375rem;
+  flex-shrink: 0;
+}
+
+.sr-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0 0 1rem;
+  flex-shrink: 0;
+}
+
+/* ── Skeleton ── */
+.sr-skeleton {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  min-height: 9rem;
+}
+
+/* ── Empty states ── */
+.sr-empty {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.5rem;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.sr-empty--error {
+  color: var(--red);
+  font-style: normal;
+}
+
+/* ── Trend chart ── */
+.sr-chart-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 9rem;
+  cursor: crosshair;
+}
+
+.sr-chart-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+
+.sr-chart-path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sr-chart-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  min-height: 9rem;
+}
+
+.sr-chart-tick {
+  font-size: 0.5625rem;
+  fill: var(--text-muted);
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+/* ── Chart insight line ── */
+.sr-chart-insight {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.65;
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* ── Tooltip ── */
+.sr-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 7.5rem;
+  box-shadow: var(--shadow-card);
+  z-index: 10;
+}
+
+.sr-tooltip-date {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.sr-tooltip-value {
+  font-size: 0.9375rem;
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* ── Correlation card ── */
+.sr-corr-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.sr-corr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sr-corr-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.sr-corr-stat {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sr-corr-stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sr-corr-stat-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-body);
+}
+
+.sr-r-badge {
+  font-size: 0.8125rem;
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 400;
+}
+
+.sr-r--strong {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.sr-r--moderate {
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.sr-r--weak {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
+
+.sr-r--none {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.sr-corr-bar-track {
+  height: 0.25rem;
+  background: var(--bg-card);
+  border-radius: 0.125rem;
+  overflow: hidden;
+}
+
+.sr-corr-bar {
+  height: 100%;
+  border-radius: 0.125rem;
+  transition: width 0.7s ease;
+}
+
+.sr-corr-bar--negative {
+  background: var(--green);
+}
+
+.sr-corr-bar--positive {
+  background: var(--red);
+}
+
+.sr-corr-interp {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Loading skeleton util (shared with Dashboard) ── */
+.loading-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-surface) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Mobile ── */
+@media (max-width: 899px) {
+  .sr-page {
+    padding: 1.25rem 1rem;
+  }
+
+  .page-title {
+    font-size: 1.75rem;
+  }
+
+  .sr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sr-card--correlation {
+    grid-column: 1;
+  }
+
+  .sr-corr-stats {
+    grid-template-columns: 1fr;
+  }
+}

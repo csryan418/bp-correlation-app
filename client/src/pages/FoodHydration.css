@@ -58,6 +58,8 @@
   border-radius: var(--radius-md);
   padding: 1.125rem 1.375rem;
   box-shadow: var(--shadow-card);
+  width: 100%;
+  overflow: hidden;
 }
 
 .fh-summary-item {
@@ -223,6 +225,10 @@
   color-scheme: dark;
 }
 
+:root.light .fh-date-input {
+  color-scheme: light;
+}
+
 /* ── Meal groups ── */
 .fh-meal-group {
   margin-bottom: 1rem;
@@ -286,6 +292,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fh-meal-group-header--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.fh-meal-group-header--clickable:hover .fh-meal-group-label {
+  color: var(--text-primary);
+}
+
+.fh-meal-group-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fh-meal-group-body {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.28s ease, opacity 0.2s ease;
+}
+
+.fh-meal-group-body--open {
+  max-height: 200rem;
+  opacity: 1;
+}
+
 /* ── Saved meals section ── */
 .fh-saved-section {
   background: var(--bg-card);
@@ -317,8 +350,48 @@
   align-items: flex-end;
 }
 
+/* My Meals collapse/expand */
+.fh-saved-header--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.fh-saved-header--clickable:hover .fh-saved-title {
+  color: var(--text-primary);
+}
+
+.fh-meals-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.fh-meals-chevron {
+  font-size: 1.125rem;
+  color: var(--text-muted);
+  display: inline-block;
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.fh-meals-chevron--up {
+  transform: rotate(-90deg);
+}
+
 /* My Meals list */
 .fh-my-meals {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease;
+}
+
+.fh-my-meals--open {
+  max-height: 60rem;
+  opacity: 1;
   margin-top: 0.875rem;
 }
 
@@ -345,16 +418,81 @@
   margin-bottom: 0.375rem;
 }
 
+.fh-my-meal-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
 .fh-my-meal-name {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-primary);
 }
 
+.fh-my-meal-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
 .fh-my-meal-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.fh-my-meal-card:hover .fs-log-entry-actions,
+.fh-my-meal-card--editing .fs-log-entry-actions {
+  opacity: 1;
+}
+
+.fh-my-meal-card .fs-log-entry-actions {
+  gap: 1rem;
+}
+
+.fh-meal-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.4375rem 0.875rem;
+  border-top: 1px solid var(--border-warm);
+  background: rgba(220, 80, 60, 0.06);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.fh-meal-delete-confirm-msg {
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.fh-meal-delete-confirm-yes {
+  background: none;
+  border: none;
+  color: #f08070;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.fh-meal-delete-confirm-yes:hover {
+  color: var(--red);
+}
+
+.fh-meal-delete-confirm-cancel {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.fh-meal-delete-confirm-cancel:hover {
+  color: var(--text-primary);
 }
 
 .fh-relog-btn {
@@ -383,6 +521,166 @@
 
 .fh-my-meal-item:last-child::after {
   content: '';
+}
+
+/* ── Meal template editing ── */
+
+.fh-my-meal-card--editing {
+  border-color: var(--border-warm);
+}
+
+.fh-edit-meal-btn {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  line-height: 1;
+  padding: 0.1875rem 0.4375rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.fh-edit-meal-btn:hover,
+.fh-edit-meal-btn--active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.fh-meal-edit-section {
+  margin-top: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.fh-meal-edit-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.fh-meal-edit-item-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.fh-meal-edit-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fh-meal-edit-item-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.fh-meal-edit-serving-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.fh-meal-edit-qty {
+  max-width: 4.25rem;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  text-align: center;
+  flex: none;
+}
+
+.fh-meal-edit-unit {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.fh-meal-edit-nutrients {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fh-meal-edit-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  padding-top: 0.0625rem;
+}
+
+.fh-meal-replace-btn {
+  background: none;
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.fh-meal-replace-btn:hover {
+  background: var(--accent-dim);
+}
+
+.fh-meal-replace-panel {
+  border-top: 1px solid var(--border-subtle);
+  padding: 0.75rem 0.75rem 0.625rem;
+  background: var(--bg-elevated);
+}
+
+.fh-meal-replace-panel--add {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.fh-meal-add-item-btn {
+  margin-top: 0.125rem;
+  align-self: flex-start;
+}
+
+.fh-meal-edit-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.fh-meal-edit-save-btn {
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.875rem;
+}
+
+/* ── Inline food search panel (used in meal edit) ── */
+
+.fh-item-search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fh-item-search-results {
+  margin-bottom: 0;
+}
+
+.fh-item-search-dismiss {
+  display: flex;
+  align-items: center;
 }
 
 /* ── Relog overlay / modal ── */
@@ -525,6 +823,28 @@
   flex: none;
 }
 
+input[type="date"].text-input {
+  color: var(--text-muted);
+  color-scheme: dark;
+  min-width: 9rem;
+  flex: none;
+  padding-right: 0.375rem;
+}
+
+input[type="date"].text-input::-webkit-calendar-picker-indicator {
+  opacity: 0.63;
+  cursor: pointer;
+}
+
+:root.light input[type="date"].text-input {
+  color-scheme: light;
+}
+
+:root.light input[type="date"].text-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.47);
+  opacity: 1;
+}
+
 .btn-primary {
   background: var(--accent);
   color: #fff;
@@ -659,8 +979,8 @@
 
 .hydration-current {
   font-family: var(--font-heading);
-  font-size: 2.875rem;
-  color: var(--text-primary);
+  font-size: 1.625rem;
+  color: var(--text-muted);
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -722,6 +1042,73 @@
   flex: none;
 }
 
+.hydration-current--editable {
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--text-muted);
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-size: 1.625rem;
+  color: var(--text-muted);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.hydration-current--editable:hover {
+  border-bottom-color: var(--text-primary);
+}
+
+.hydration-total-input {
+  font-family: var(--font-heading);
+  font-size: 1.625rem;
+  color: var(--text-muted);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--text-muted);
+  padding: 0;
+  width: 4ch;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.hydration-total-input::-webkit-inner-spin-button,
+.hydration-total-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hydration-total-save,
+.hydration-total-cancel {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-secondary);
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.hydration-total-save:hover { color: var(--green); }
+.hydration-total-cancel:hover { color: var(--red); }
+
+@media (max-width: 1200px) {
+  /* Stack the three nutrient stats vertically */
+  .fh-summary-bar {
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+}
+
 @media (max-width: 899px) {
   .fh-page {
     padding: 1.25rem 1rem;
@@ -737,13 +1124,59 @@
     flex-direction: column;
   }
 
+  .fh-main {
+    width: 100%;
+  }
+
   .fh-sidebar {
     flex: none;
     width: 100%;
   }
 
-  .fh-summary-bar {
-    gap: 0.625rem;
+  /* Remove the inner scroll cap so the scrollable list doesn't create a
+     stacking context that lets the next meal-group header bleed over
+     the previous section's food items */
+  .fs-log-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  /* Guarantee at least 16px of breathing room before each section header */
+  .fh-meal-group + .fh-meal-group {
+    margin-top: 1rem;
+  }
+}
+
+@media (max-width: 499px) {
+  /* Today's log: wrap the meal-type header so the totals line doesn't
+     overflow and visually collide with the food entries below it.
+     Also remove the inner scroll cap so content isn't clipped. */
+  .fh-meal-group-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.125rem 0.5rem;
+  }
+  .fh-meal-group-totals {
+    flex-basis: 100%;
+    font-size: 0.625rem;
+  }
+  .fs-log-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  /* My Meals: constrain card content to viewport width */
+  .fh-my-meal-header {
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .fh-my-meal-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .fh-my-meal-item {
+    overflow-wrap: break-word;
   }
 }
 
@@ -1065,8 +1498,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  max-height: 11rem;
-  overflow-y: auto;
 }
 
 .fs-log-entry {
@@ -1298,7 +1729,7 @@
 .fs-log-entry-actions {
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+  gap: 1rem;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s;
@@ -1476,6 +1907,18 @@
   padding: 0.625rem 0.875rem;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-card);
+}
+
+.fh-basket-save-row {
+  padding: 0.5rem 0.875rem 0.625rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.fh-save-meal-success {
+  font-size: 0.8125rem;
+  color: var(--green);
+  font-weight: 500;
 }
 
 /* ── Create saved meal modal ── */

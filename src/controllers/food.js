@@ -18,8 +18,8 @@ export async function getPortions(req, res) {
   const { fdcId } = req.params;
   try {
     const fetcher = fdcId.startsWith('off_') ? getOpenFoodFactsPortions : getFoodPortions;
-    const { portions, basePer100g } = await fetcher(fdcId);
-    res.json({ fdcId, portions, basePer100g });
+    const { portions, basePer100g, isBeverage } = await fetcher(fdcId);
+    res.json({ fdcId, portions, basePer100g, isBeverage });
   } catch (err) {
     res.status(502).json({ error: 'Portions fetch failed', detail: err.message });
   }

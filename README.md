@@ -25,7 +25,7 @@ cd ~/bp-correlation && node server.js
 ```bash
 cd ~/bp-correlation/client && npm run dev
 ```
-Then open http://localhost:5174
+Then open http://localhost:5173
 
 ## Key commands
 ```bash

@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
   { to: '/blood-pressure', label: 'Blood Pressure' },
   { to: '/food-hydration', label: 'Food & Hydration' },
+  { to: '/sleep-recovery', label: 'Sleep & Recovery' },
 ]
 
 export default function Sidebar() {

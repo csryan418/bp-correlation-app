@@ -93,60 +93,31 @@ function formatDeepSleep(minutes) {
   return `${h}h ${m}m`
 }
 
-// Returns array of 7 slots { date, dayLabel, value } oldest→newest.
-// value is the averaged (or single) diastolic for that day, or null for gaps.
-function extractSparklineData(input) {
-  console.log('[Sparkline] raw input:', JSON.stringify(input?.slice(0, 3)))
+// Returns flat readings for the last 7 days, sorted oldest→newest then morning→evening.
+function extractBPReadings(data) {
+  if (!Array.isArray(data)) return []
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 6)
+  cutoff.setHours(0, 0, 0, 0)
+  const cutoffMs = cutoff.getTime()
+  return data
+    .filter(r => {
+      const date = String(r.date || '').slice(0, 10)
+      if (!date || r.systolic == null || r.diastolic == null) return false
+      return new Date(date + 'T12:00:00').getTime() >= cutoffMs
+    })
+    .sort((a, b) => {
+      const dc = String(a.date).localeCompare(String(b.date))
+      if (dc !== 0) return dc
+      const order = { morning: 0, evening: 1 }
+      return (order[(a.time_of_day || '').toLowerCase()] ?? 0) -
+             (order[(b.time_of_day || '').toLowerCase()] ?? 0)
+    })
+}
 
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-  // Build fixed 7-day window ending today
-  const today = new Date()
-  const slots = []
-  for (let offset = 6; offset >= 0; offset--) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - offset)
-    const dateStr = [
-      d.getFullYear(),
-      String(d.getMonth() + 1).padStart(2, '0'),
-      String(d.getDate()).padStart(2, '0'),
-    ].join('-')
-    slots.push({ date: dateStr, dayLabel: dayLabels[d.getDay()], value: null })
-  }
-
-  if (!Array.isArray(input)) return slots
-
-  // Group flat readings by date, collecting morning/evening diastolic separately
-  const byDate = new Map()
-  for (const r of input) {
-    const dateStr = String(r.date ?? '').slice(0, 10)
-    if (!dateStr || r.diastolic == null) continue
-    if (!byDate.has(dateStr)) byDate.set(dateStr, { morning: null, evening: null })
-    const entry = byDate.get(dateStr)
-    const period = (r.time_of_day ?? '').toLowerCase()
-    if (period === 'morning') entry.morning = r.diastolic
-    else if (period === 'evening') entry.evening = r.diastolic
-  }
-
-  const daysWithData = []
-
-  for (const slot of slots) {
-    const entry = byDate.get(slot.date)
-    if (!entry) continue
-    const { morning, evening } = entry
-    if (morning != null && evening != null) {
-      slot.value = Math.round((morning + evening) / 2)
-    } else if (morning != null) {
-      slot.value = morning
-    } else if (evening != null) {
-      slot.value = evening
-    }
-    if (slot.value != null) daysWithData.push(slot.date)
-  }
-
-  console.log('Days with data:', daysWithData)
-
-  return slots
+function formatBPDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 // Build a smooth cubic bezier path through an array of [x,y] coords.
@@ -163,33 +134,10 @@ function smoothCubicPath(pts) {
   return d
 }
 
-function diastolicDotColor(val) {
-  if (val < 80) return 'var(--green)'
-  if (val < 90) return 'var(--amber)'
-  return 'var(--red)'
-}
-
-// Split an array into runs of consecutive items that satisfy predicate,
-// returning each run as { run: [...items], startIndex: number }.
-function consecutiveRuns(arr, predicate) {
-  const runs = []
-  let current = null
-  for (let i = 0; i < arr.length; i++) {
-    if (predicate(arr[i])) {
-      if (!current) current = { run: [], startIndex: i }
-      current.run.push(arr[i])
-    } else if (current) {
-      runs.push(current)
-      current = null
-    }
-  }
-  if (current) runs.push(current)
-  return runs
-}
-
-function Sparkline({ slots }) {
+function BPTrendChart({ readings }) {
   const wrapRef = useRef(null)
   const [width, setWidth] = useState(600)
+  const [hovered, setHovered] = useState(null)
 
   useEffect(() => {
     if (!wrapRef.current) return
@@ -201,133 +149,136 @@ function Sparkline({ slots }) {
     return () => obs.disconnect()
   }, [])
 
-  const hasAny = slots.some(s => s.value != null)
-
-  if (!hasAny) {
+  if (!readings.length) {
     return <p className="sparkline-empty">No readings in the last 7 days.</p>
   }
 
-  const H = 120
-  const padLeft = 36
-  const padRight = 8
-  const padTop = 10
-  const padBottom = 24
+  const H = 160
+  const padLeft = 34
+  const padRight = 35
+  const padTop = 12
+  const padBottom = 32
 
   const chartW = width - padLeft - padRight
   const chartH = H - padTop - padBottom
-  const n = slots.length // always 7
+  const n = readings.length
 
-  const dias = slots.filter(s => s.value != null).map(s => s.value)
-  const minVal = Math.min(...dias, 70)
-  const maxVal = Math.max(...dias, 95)
+  const allVals = readings.flatMap(r => [r.systolic, r.diastolic])
+  const minVal = Math.min(...allVals) - 4
+  const maxVal = Math.max(...allVals) + 4
   const range = maxVal - minVal || 1
 
   function yPos(val) {
     return padTop + chartH - ((val - minVal) / range) * chartH
   }
 
-  // X position based on slot index in the fixed 7-slot window
   function xPos(i) {
+    if (n === 1) return padLeft + chartW / 2
     return padLeft + (i / (n - 1)) * chartW
   }
 
-  // Reference lines
-  const refLines = [
-    { val: 80, label: 'Elevated' },
-    { val: 90, label: 'High' },
-  ].filter(r => r.val >= minVal && r.val <= maxVal)
+  const sysPath = smoothCubicPath(readings.map((r, i) => [xPos(i), yPos(r.systolic)]))
+  const diaPath = smoothCubicPath(readings.map((r, i) => [xPos(i), yPos(r.diastolic)]))
 
-  // Build separate path segments for each consecutive run of non-null values
-  const dataRuns = consecutiveRuns(slots, s => s.value != null)
-  const pathSegments = dataRuns.map(({ run, startIndex }) =>
-    smoothCubicPath(run.map((s, j) => [xPos(startIndex + j), yPos(s.value)]))
-  )
+  const sysMidY = yPos(readings.reduce((s, r) => s + r.systolic, 0) / n)
+  const diaMidY = yPos(readings.reduce((s, r) => s + r.diastolic, 0) / n)
 
-  // Approximate text width for knockout rect sizing (10px font, ~6px per char)
-  const labelCharWidth = 6
+  function handleMouseMove(e) {
+    if (!wrapRef.current) return
+    const rect = wrapRef.current.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    let closest = null, bestDist = Infinity
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(xPos(i) - mx)
+      if (dist < bestDist) { bestDist = dist; closest = i }
+    }
+    setHovered(closest !== null && bestDist < 40 ? closest : null)
+  }
+
+  const hoveredReading = hovered != null ? readings[hovered] : null
 
   return (
-    <div className="sparkline-wrap" ref={wrapRef}>
-      <svg className="sparkline-svg" viewBox={`0 0 ${width} ${H}`} preserveAspectRatio="none">
-        {/* Reference lines — drawn first so data paints on top */}
-        {refLines.map(({ val }) => {
-          const y = yPos(val)
-          return (
-            <line
-              key={val}
-              className="sparkline-ref-line"
-              x1={padLeft} y1={y}
-              x2={width - padRight} y2={y}
-            />
-          )
-        })}
+    <div
+      className="sparkline-wrap"
+      ref={wrapRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => setHovered(null)}
+      style={{ cursor: 'crosshair' }}
+    >
+      <svg
+        className="sparkline-svg"
+        viewBox={`0 0 ${width} ${H}`}
+        preserveAspectRatio="none"
+        aria-label="7-day blood pressure trend showing systolic and diastolic readings in mmHg"
+      >
+        {/* Systolic line */}
+        <path className="sparkline-path" d={sysPath} style={{ stroke: 'var(--accent)' }} />
+        {/* Diastolic line */}
+        <path className="sparkline-path" d={diaPath} style={{ stroke: 'var(--amber)' }} />
 
-        {pathSegments.map((d, i) => (
-          <path key={i} className="sparkline-path" d={d} />
+        {/* Systolic dots */}
+        {readings.map((r, i) => (
+          <circle
+            key={`sys-${i}`}
+            cx={xPos(i)}
+            cy={yPos(r.systolic)}
+            r={hovered === i ? 5 : 3}
+            fill="var(--accent)"
+            stroke="var(--bg-card)"
+            strokeWidth={1.5}
+          />
         ))}
 
-        {slots.map((s, i) =>
-          s.value != null ? (
-            <circle
-              key={s.date}
-              cx={xPos(i)}
-              cy={yPos(s.value)}
-              r={4}
-              fill={diastolicDotColor(s.value)}
-              stroke="var(--bg-card)"
-              strokeWidth={1.5}
-            />
-          ) : null
-        )}
-
-        {slots.map((s, i) => (
-          <text
-            key={`label-${s.date}`}
-            className="sparkline-day-label"
-            x={xPos(i)}
-            y={H - 4}
-          >
-            {s.dayLabel}
-          </text>
+        {/* Diastolic dots */}
+        {readings.map((r, i) => (
+          <circle
+            key={`dia-${i}`}
+            cx={xPos(i)}
+            cy={yPos(r.diastolic)}
+            r={hovered === i ? 5 : 3}
+            fill="var(--amber)"
+            stroke="var(--bg-card)"
+            strokeWidth={1.5}
+          />
         ))}
 
-        {/* Reference labels — painted last so they sit above data */}
-        {refLines.map(({ val, label }) => {
-          const y = yPos(val)
-          const numW = String(val).length * labelCharWidth + 6
-          const lblW = label.length * labelCharWidth + 6
+        {/* X-axis labels */}
+        {readings.map((r, i) => {
+          const period = (r.time_of_day || '').toLowerCase() === 'morning' ? 'AM' : 'PM'
+          const [, m, d] = r.date.split('-')
+          const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'
           return (
-            <g key={`lbl-${val}`}>
-              {/* Left: numeric value */}
-              <rect
-                x={padLeft - 4 - numW}
-                y={y - 6}
-                width={numW}
-                height={12}
-                fill="var(--bg-card)"
-                opacity={0.85}
-                rx={2}
-              />
-              <text className="sparkline-ref-label" x={padLeft - 6} y={y + 3} textAnchor="end">
-                {val}
-              </text>
-              {/* Right: text label with knockout */}
-              <rect
-                x={width - 2 - lblW}
-                y={y - 14}
-                width={lblW}
-                height={12}
-                fill="var(--bg-card)"
-                opacity={0.85}
-                rx={2}
-              />
-              <text className="sparkline-ref-label" x={width - 4} y={y - 5} textAnchor="end">
-                {label}
-              </text>
-            </g>
+            <text
+              key={`lbl-${i}`}
+              className="sparkline-day-label"
+              x={xPos(i)}
+              y={H - 4}
+              textAnchor={anchor}
+            >
+              {`${period} · ${parseInt(m)}/${parseInt(d)}`}
+            </text>
           )
         })}
       </svg>
+
+      {hoveredReading && (
+        <div
+          className="bp-trend-tooltip"
+          style={{
+            left: Math.min(xPos(hovered) + 12, width - 145),
+            top: Math.max(yPos(hoveredReading.systolic) - 44, 4),
+          }}
+        >
+          <span className="bp-trend-tooltip-meta">
+            {(hoveredReading.time_of_day || '').toLowerCase() === 'morning' ? 'Morning' : 'Evening'}
+            {' · '}{formatBPDate(hoveredReading.date)}
+          </span>
+          <span className="bp-trend-tooltip-value">
+            {hoveredReading.systolic} / {hoveredReading.diastolic}
+          </span>
+          <span className="bp-trend-tooltip-unit">mmHg</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -357,7 +308,7 @@ export default function Dashboard() {
   const today = parseTodayReadings(bp.data)
   const topInsights = extractInsights(insights.data)
   const recovery = parseOura(oura.data)
-  const sparkSlots = extractSparklineData(bp.data)
+  const bpReadings = extractBPReadings(bp.data)
 
   return (
     <div className="dashboard">
@@ -444,13 +395,29 @@ export default function Dashboard() {
             </div>
           )}
         </section>
-        {/* Sparkline — spans full grid width */}
+        {/* BP trend — spans full grid width */}
         <section className="card sparkline-card">
-          <h2 className="card-title">7-Day Diastolic Trend</h2>
+          <div className="sparkline-card-header">
+            <h2 className="card-title">7-Day Blood Pressure</h2>
+            <div className="bp-legend-inline">
+              <span className="bp-legend-item">
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                  <circle cx="4" cy="4" r="4" fill="var(--accent)" />
+                </svg>
+                Systolic <span className="bp-legend-hint">(top)</span>
+              </span>
+              <span className="bp-legend-item">
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                  <circle cx="4" cy="4" r="4" fill="var(--amber)" />
+                </svg>
+                Diastolic <span className="bp-legend-hint">(bottom)</span>
+              </span>
+            </div>
+          </div>
           {bp.loading ? (
-            <div className="loading-skeleton" style={{ height: '5rem', marginTop: '0.5rem' }} />
+            <div className="loading-skeleton" style={{ height: '6.25rem', marginTop: '0.5rem' }} />
           ) : (
-            <Sparkline slots={sparkSlots} />
+            <BPTrendChart readings={bpReadings} />
           )}
         </section>
       </div>

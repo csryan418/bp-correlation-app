@@ -24,6 +24,7 @@ async function searchOpenFoodFacts(query) {
       json: 1,
       fields: 'code,product_name,nutriments,serving_size',
       page_size: 5,
+      countries_tags: 'united-states',
     },
   });
   return (res.data.products ?? []).slice(0, 5).map(normalizeOffProduct);
@@ -52,7 +53,7 @@ export async function getOpenFoodFactsPortions(offId) {
     magnesium_mg: n.magnesium_100g != null ? n.magnesium_100g * 1000 : null,
   };
 
-  return { portions, basePer100g };
+  return { portions, basePer100g, isBeverage: false };
 }
 
 export async function getFoodPortions(fdcId) {
@@ -69,6 +70,9 @@ export async function getFoodPortions(fdcId) {
         .filter(Boolean)
         .join(' '),
       grams: p.gramWeight,
+      portionDescription: p.portionDescription ?? null,
+      description: p.description ?? null,
+      modifier: p.modifier ?? null,
     }));
 
   portions.push({ label: '100g', grams: 100 });
@@ -84,7 +88,12 @@ export async function getFoodPortions(fdcId) {
     magnesium_mg: getNutrient(1090),
   };
 
-  return { portions, basePer100g };
+  const beverageNameKeywords = /coffee|latte|espresso|cappuccino|americano|macchiato|mocha|chai|matcha|smoothie|juice|shake|milkshake/i
+  const isBeverage =
+    /beverage|coffee|tea|juice|soft drink|soda|water|milk|dairy drink/i.test(data.foodCategory?.description ?? '') ||
+    beverageNameKeywords.test(data.description ?? '')
+
+  return { portions, basePer100g, isBeverage };
 }
 
 // Stable USDA nutrient IDs (per 100g for Foundation/SR Legacy foods)
@@ -117,17 +126,41 @@ export async function lookupNutrients(foodName) {
   return { fdcId: food.fdcId, description: food.description, nutrients };
 }
 
-export async function searchFoods(foodName) {
-  const res = await axios.get(`${BASE_URL}/foods/search`, {
-    params: {
-      query: foodName,
-      api_key: process.env.USDA_API_KEY,
-      pageSize: 5,
-      dataType: 'Foundation,SR Legacy',
-    },
-  });
+const WHOLE_FOOD_TYPES = new Set(['Foundation', 'SR Legacy']);
 
-  const usdaResults = (res.data.foods ?? []).slice(0, 5).map(food => {
+async function searchUSDA(foodName) {
+  const commonParams = {
+    query: foodName,
+    api_key: process.env.USDA_API_KEY,
+    sortBy: 'score',
+    sortOrder: 'desc',
+  };
+
+  const [wholeRes, broadRes] = await Promise.all([
+    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 5, dataType: 'Foundation,SR Legacy' } }),
+    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 3 } }),
+  ]);
+
+  const seen = new Set();
+  const merged = [];
+  for (const food of [...(wholeRes.data.foods ?? []), ...(broadRes.data.foods ?? [])]) {
+    if (!seen.has(food.fdcId)) {
+      seen.add(food.fdcId);
+      merged.push(food);
+    }
+  }
+
+  const foods = merged
+    .sort((a, b) => {
+      const aWhole = WHOLE_FOOD_TYPES.has(a.dataType);
+      const bWhole = WHOLE_FOOD_TYPES.has(b.dataType);
+      if (aWhole && !bWhole) return -1;
+      if (!aWhole && bWhole) return 1;
+      return 0;
+    })
+    .slice(0, 5);
+
+  return foods.map(food => {
     const getNutrient = (id) =>
       food.foodNutrients.find(n => n.nutrientId === id)?.value ?? null;
 
@@ -139,9 +172,43 @@ export async function searchFoods(foodName) {
       magnesium_mg: getNutrient(NUTRIENT_IDS.magnesium_mg),
       serving_size: food.servingSize ?? 100,
       serving_unit: food.servingSizeUnit ?? 'g',
+      source: 'usda',
     };
   });
+}
 
-  if (usdaResults.length > 0) return usdaResults;
-  return searchOpenFoodFacts(foodName);
+export async function searchFoods(foodName) {
+  const [usdaOutcome, offOutcome] = await Promise.allSettled([
+    searchUSDA(foodName),
+    searchOpenFoodFacts(foodName),
+  ]);
+
+  const usdaResults = usdaOutcome.status === 'fulfilled' ? usdaOutcome.value : [];
+  const offResults  = offOutcome.status  === 'fulfilled' ? offOutcome.value  : [];
+
+  const maxLen = Math.max(usdaResults.length, offResults.length);
+  const interleaved = [];
+  for (let i = 0; i < maxLen; i++) {
+    if (i < usdaResults.length) interleaved.push(usdaResults[i]);
+    if (i < offResults.length)  interleaved.push(offResults[i]);
+  }
+
+  const hasNutrients = (item) =>
+    item.sodium_mg != null || item.potassium_mg != null || item.magnesium_mg != null;
+
+  const queryLower = foodName.toLowerCase();
+  const isRelevant = (item) => {
+    const d = item.description.toLowerCase();
+    return d === queryLower || d.startsWith(queryLower);
+  };
+
+  return interleaved
+    .filter(hasNutrients)
+    .sort((a, b) => {
+      const aMatch = isRelevant(a);
+      const bMatch = isRelevant(b);
+      if (aMatch && !bMatch) return -1;
+      if (!aMatch && bMatch) return 1;
+      return 0;
+    });
 }

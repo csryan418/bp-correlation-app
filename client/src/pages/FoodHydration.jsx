@@ -19,8 +19,29 @@ function formatLogDate(dateStr) {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+function localDateString() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function gramsToFlOz(grams) {
+  return Math.round((grams / 29.57) * 2) / 2
+}
+
+function dedupePortions(portions) {
+  const seen = new Set()
+  return portions.filter(p => {
+    const name = p.portionDescription || p.description || p.modifier || p.label || ''
+    if (name === 'Quantity not specified') return false
+    const key = `${name}|${p.grams}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export default function FoodHydration() {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
 
@@ -38,7 +59,7 @@ export default function FoodHydration() {
       <header className="page-header fh-page-header">
         <div>
           <h1 className="page-title">Food & Hydration</h1>
-          <p className="page-subtitle">Log today's food and water intake</p>
+          <p className="page-subtitle">Log today's food, water intake, and supplements.</p>
         </div>
         <div className="fh-page-date-nav">
           <button className="fh-date-nav-btn" onClick={() => navigateDate(-1)} aria-label="Previous day">‹</button>
@@ -59,7 +80,7 @@ export default function FoodHydration() {
 }
 
 function FoodSection({ selectedDate, setSelectedDate }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString()
   const isToday = selectedDate === today
 
   // Search
@@ -80,6 +101,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [confirmPortionIdx, setConfirmPortionIdx] = useState(0)
   const [confirmQuantity, setConfirmQuantity] = useState(1)
   const [confirmGramsInput, setConfirmGramsInput] = useState(100)
+  const [confirmIsBeverage, setConfirmIsBeverage] = useState(false)
 
   // Basket — items staged for "Log Meal"
   const [basket, setBasket] = useState([])
@@ -88,6 +110,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   // Toast & log
   const [toast, setToast] = useState(false)
   const [todayLog, setTodayLog] = useState([])
+  const [collapsedMeals, setCollapsedMeals] = useState(new Set())
 
   // Edit in-place
   const [editingId, setEditingId] = useState(null)
@@ -100,6 +123,10 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [editPotassium, setEditPotassium] = useState('')
   const [editMagnesium, setEditMagnesium] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  const [editIsBeverage, setEditIsBeverage] = useState(false)
+  const [editSodiumBase, setEditSodiumBase] = useState(null)
+  const [editPotassiumBase, setEditPotassiumBase] = useState(null)
+  const [editMagnesiumBase, setEditMagnesiumBase] = useState(null)
 
   // Manual entry
   const [showManual, setShowManual] = useState(false)
@@ -113,6 +140,21 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   // Saved meals
   const [savedMeals, setSavedMeals] = useState([])
   const [showCreateMeal, setShowCreateMeal] = useState(false)
+  const [mealsExpanded, setMealsExpanded] = useState(false)
+  const [confirmDeleteMealId, setConfirmDeleteMealId] = useState(null)
+
+  // Meal template editing
+  const [editingMealId, setEditingMealId] = useState(null)
+  const [editingItems, setEditingItems] = useState([])
+  const [deletedItemIds, setDeletedItemIds] = useState([])
+  const [mealSaving, setMealSaving] = useState(false)
+  const [replacingItemKey, setReplacingItemKey] = useState(null)
+
+  // Save as Meal (from basket)
+  const [showSaveMeal, setShowSaveMeal] = useState(false)
+  const [savingMealName, setSavingMealName] = useState('')
+  const [savingMeal, setSavingMeal] = useState(false)
+  const [saveMealSuccess, setSaveMealSuccess] = useState(false)
 
   const debounceRef = useRef(null)
   const toastRef = useRef(null)
@@ -127,6 +169,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setQuery('')
     setResults([])
     setSearchError(null)
+    setCollapsedMeals(new Set())
   }, [selectedDate])
 
   async function fetchLog(date) {
@@ -138,7 +181,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
   async function fetchSavedMeals() {
     try {
-      const data = await api.getSavedMeals()
+      const data = await api.getMeals()
       setSavedMeals(Array.isArray(data) ? data : [])
     } catch { }
   }
@@ -166,7 +209,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     try {
       const data = await api.searchFood(term)
       if (gen !== searchGenRef.current) return
-      const items = Array.isArray(data) ? data.slice(0, 5) : []
+      const items = Array.isArray(data) ? data.slice(0, 10) : []
       setResults(items)
       if (items.length === 0) setSearchError('empty')
     } catch {
@@ -187,9 +230,12 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setConfirmPortionsLoading(true)
     try {
       const data = await api.getFoodPortions(item.fdcId)
-      const portionList = data.portions ?? []
+      console.log('portions API response', data)
+      console.log('isBeverage:', data.isBeverage)
+      const portionList = dedupePortions(data.portions ?? [])
       setConfirmPortions(portionList)
       setConfirmBasePer100g(data.basePer100g ?? null)
+      setConfirmIsBeverage(data.isBeverage ?? false)
       const defaultIdx = portionList.findIndex(p => p.label !== '100g')
       setConfirmPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
     } catch {
@@ -206,6 +252,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setConfirmBasePer100g(null)
     setConfirmPortionsFailed(false)
     setConfirmQuantity(1)
+    setConfirmIsBeverage(false)
   }
 
   function clearQuery() {
@@ -281,7 +328,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
           sodium_mg:    item.sodiumPerUnit    != null ? Math.round(item.sodiumPerUnit    * qty) : null,
           potassium_mg: item.potassiumPerUnit != null ? Math.round(item.potassiumPerUnit * qty) : null,
           magnesium_mg: item.magnesiumPerUnit != null ? Math.round(item.magnesiumPerUnit * qty) : null,
-          date: today,
+          date: selectedDate,
           meal_type: activeMealType,
           meal_id: mealId,
         })
@@ -294,20 +341,6 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     }
   }
 
-  function loadSavedMealIntoBasket(meal) {
-    const items = meal.items.map(item => ({
-      key: `relog-${item.id}-${Date.now()}`,
-      fdcId: item.fdc_id ?? null,
-      description: item.food_name,
-      sodiumPerUnit:    item.sodium_mg_per_100g    ?? null,
-      potassiumPerUnit: item.potassium_mg_per_100g ?? null,
-      magnesiumPerUnit: item.magnesium_mg_per_100g ?? null,
-      quantity: 1,
-      portionLabel: '1 srv',
-    }))
-    setBasket(items)
-  }
-
   // Edit in-place handlers (unchanged)
   async function openEdit(entry) {
     if (editingId === entry.id) { setEditingId(null); return }
@@ -315,22 +348,37 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setEditPortions([])
     setEditBasePer100g(null)
     setEditPortionIdx(0)
-    setEditQuantity(parseFloat(entry.serving_size) || 1)
+    const qty = parseFloat(entry.serving_size) || 1
+    setEditQuantity(qty)
+    setEditSodiumBase(entry.sodium_mg    != null ? entry.sodium_mg    / qty : null)
+    setEditPotassiumBase(entry.potassium_mg != null ? entry.potassium_mg / qty : null)
+    setEditMagnesiumBase(entry.magnesium_mg != null ? entry.magnesium_mg / qty : null)
     setEditSodium(String(Math.round(entry.sodium_mg    || 0)))
     setEditPotassium(String(Math.round(entry.potassium_mg || 0)))
     setEditMagnesium(String(Math.round(entry.magnesium_mg || 0)))
-    if (entry.fdc_id) {
-      setEditPortionsLoading(true)
-      try {
-        const data = await api.getFoodPortions(entry.fdc_id)
-        const portionList = data.portions ?? []
-        setEditPortions(portionList)
-        setEditBasePer100g(data.basePer100g ?? null)
-        const defaultIdx = portionList.findIndex(p => p.label !== '100g')
-        setEditPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
-      } catch { } finally {
-        setEditPortionsLoading(false)
+    async function loadPortions(fdcId) {
+      const data = await api.getFoodPortions(fdcId)
+      const portionList = dedupePortions(data.portions ?? [])
+      setEditPortions(portionList)
+      setEditBasePer100g(data.basePer100g ?? null)
+      setEditIsBeverage(data.isBeverage ?? false)
+      const defaultIdx = portionList.findIndex(p => p.label !== '100g')
+      setEditPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
+    }
+
+    const fdcId = parseInt(entry.fdc_id)
+    setEditPortionsLoading(true)
+    try {
+      if (fdcId) {
+        await loadPortions(fdcId)
+      } else if (entry.description) {
+        // fdc_id not stored — look it up by name (USDA descriptions are exact)
+        const results = await api.searchFood(entry.description)
+        const match = Array.isArray(results) && results[0]
+        if (match?.fdcId) await loadPortions(match.fdcId)
       }
+    } catch { } finally {
+      setEditPortionsLoading(false)
     }
   }
 
@@ -379,7 +427,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
       showToast()
       setShowManual(false)
       setManualName(''); setManualSodium(''); setManualPotassium(''); setManualMagnesium('')
-      setManualDate(today)
+      setManualDate(selectedDate)
       fetchLog(selectedDate)
     } catch { } finally {
       setManualLogging(false)
@@ -387,13 +435,163 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   async function handleDeleteSavedMeal(id) {
-    try { await api.deleteSavedMeal(id); fetchSavedMeals() } catch { }
+    try { await api.deleteMeal(id); fetchSavedMeals() } catch { }
   }
 
   async function handleCreateSavedMeal(name, items) {
-    await api.createSavedMeal(name, items)
+    await api.createMeal(name, items)
     setShowCreateMeal(false)
     fetchSavedMeals()
+  }
+
+  async function handleSaveAsMeal() {
+    if (!savingMealName.trim() || basket.length < 2) return
+    setSavingMeal(true)
+    try {
+      const items = basket.map(item => {
+        const qty = parseFloat(item.quantity) || 1
+        return {
+          food_name: item.description,
+          fdc_id: item.fdcId ? String(parseInt(item.fdcId)) : null,
+          serving_size: qty,
+          serving_unit: item.portionLabel,
+          calories: null,
+          sodium:    item.sodiumPerUnit    != null ? Math.round(item.sodiumPerUnit    * qty) : null,
+          potassium: item.potassiumPerUnit != null ? Math.round(item.potassiumPerUnit * qty) : null,
+          magnesium: item.magnesiumPerUnit != null ? Math.round(item.magnesiumPerUnit * qty) : null,
+        }
+      })
+      await api.createMeal(savingMealName.trim(), items)
+      setSaveMealSuccess(true)
+      fetchSavedMeals()
+      setTimeout(() => {
+        setSaveMealSuccess(false)
+        setShowSaveMeal(false)
+        setSavingMealName('')
+      }, 2000)
+    } catch { } finally {
+      setSavingMeal(false)
+    }
+  }
+
+  async function handleLoadMeal(mealId) {
+    try {
+      const data = await api.loadMeal(mealId)
+      const items = (data.items ?? []).map(item => ({
+        key: `tmpl-${item.id}-${Date.now()}`,
+        fdcId: item.fdc_id ? parseInt(item.fdc_id) : null,
+        description: item.food_name,
+        sodiumPerUnit:    item.sodium    ?? null,
+        potassiumPerUnit: item.potassium ?? null,
+        magnesiumPerUnit: item.magnesium ?? null,
+        quantity: item.serving_size ?? 1,
+        portionLabel: item.serving_unit ?? '1 srv',
+      }))
+      setBasket(items)
+    } catch { }
+  }
+
+  // Meal template edit handlers
+  function enterEditMode(meal) {
+    if (editingMealId === meal.id) { cancelEditMode(); return }
+    setEditingMealId(meal.id)
+    setEditingItems(meal.items.map(item => ({
+      _key: `e-${item.id}`,
+      id: item.id,
+      food_name: item.food_name,
+      fdc_id: item.fdc_id ?? null,
+      serving_size: item.serving_size ?? 1,
+      serving_unit: item.serving_unit ?? '1 srv',
+      calories: item.calories ?? null,
+      sodium: item.sodium ?? null,
+      potassium: item.potassium ?? null,
+      magnesium: item.magnesium ?? null,
+      _perUnit: null,
+    })))
+    setDeletedItemIds([])
+    setReplacingItemKey(null)
+  }
+
+  function cancelEditMode() {
+    setEditingMealId(null)
+    setEditingItems([])
+    setDeletedItemIds([])
+    setReplacingItemKey(null)
+  }
+
+  function updateEditItemQty(key, val) {
+    const qty = Math.max(0.25, parseFloat(val) || 0.25)
+    setEditingItems(prev => prev.map(i => i._key === key ? { ...i, serving_size: qty } : i))
+  }
+
+  function removeEditItem(key) {
+    setEditingItems(prev => {
+      const item = prev.find(i => i._key === key)
+      if (item?.id) setDeletedItemIds(d => [...d, item.id])
+      return prev.filter(i => i._key !== key)
+    })
+    setReplacingItemKey(prev => prev === key ? null : prev)
+  }
+
+  function replaceEditItem(key, selected) {
+    setEditingItems(prev => prev.map(i => i._key !== key ? i : {
+      ...i,
+      food_name: selected.food_name,
+      fdc_id: selected.fdc_id ?? null,
+      serving_size: selected.serving_size,
+      serving_unit: selected.serving_unit,
+      calories: selected.calories ?? null,
+      sodium: selected.sodium ?? null,
+      potassium: selected.potassium ?? null,
+      magnesium: selected.magnesium ?? null,
+      _perUnit: selected._perUnit ?? null,
+    }))
+  }
+
+  function addEditItem(selected) {
+    setEditingItems(prev => [...prev, {
+      _key: `new-${Date.now()}`,
+      id: null,
+      food_name: selected.food_name,
+      fdc_id: selected.fdc_id ?? null,
+      serving_size: selected.serving_size,
+      serving_unit: selected.serving_unit,
+      calories: selected.calories ?? null,
+      sodium: selected.sodium ?? null,
+      potassium: selected.potassium ?? null,
+      magnesium: selected.magnesium ?? null,
+      _perUnit: selected._perUnit ?? null,
+    }])
+  }
+
+  async function handleMealEditSave(meal) {
+    setMealSaving(true)
+    try {
+      for (const itemId of deletedItemIds) {
+        await api.deleteMealItem(meal.id, itemId)
+      }
+      for (const item of editingItems) {
+        const payload = {
+          food_name: item.food_name,
+          fdc_id: item.fdc_id ?? null,
+          serving_size: item.serving_size,
+          serving_unit: item.serving_unit,
+          calories: item.calories ?? null,
+          sodium:    item._perUnit ? item._perUnit.sodium    : item.sodium,
+          potassium: item._perUnit ? item._perUnit.potassium : item.potassium,
+          magnesium: item._perUnit ? item._perUnit.magnesium : item.magnesium,
+        }
+        if (item.id) {
+          await api.updateMealItem(meal.id, item.id, payload)
+        } else {
+          await api.addMealItem(meal.id, payload)
+        }
+      }
+      cancelEditMode()
+      fetchSavedMeals()
+    } catch { } finally {
+      setMealSaving(false)
+    }
   }
 
   // Grouping
@@ -420,12 +618,22 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const basketPotassium = basket.reduce((s, i) => s + (i.potassiumPerUnit != null ? Math.round(i.potassiumPerUnit * i.quantity) : 0), 0)
   const basketMagnesium = basket.reduce((s, i) => s + (i.magnesiumPerUnit != null ? Math.round(i.magnesiumPerUnit * i.quantity) : 0), 0)
 
+  function handleEditManualQtyChange(val) {
+    const q = Math.max(0.25, parseFloat(val) || 0.25)
+    setEditQuantity(q)
+    if (editSodiumBase    != null) setEditSodium(String(Math.round(editSodiumBase    * q)))
+    if (editPotassiumBase != null) setEditPotassium(String(Math.round(editPotassiumBase * q)))
+    if (editMagnesiumBase != null) setEditMagnesium(String(Math.round(editMagnesiumBase * q)))
+  }
+
   const editProps = {
     editingId, editPortionsLoading, editPortions, editBasePer100g,
     editPortionIdx, setEditPortionIdx, editQuantity, setEditQuantity,
     editSodium, setEditSodium, editPotassium, setEditPotassium,
     editMagnesium, setEditMagnesium,
     editComputedSodium, editComputedPotassium, editComputedMagnesium,
+    editIsBeverage,
+    onEditManualQtyChange: handleEditManualQtyChange,
     editSaving, onEdit: openEdit, onEditSave: handleEditSave,
     onCancelEdit: () => setEditingId(null), onDelete: handleDelete,
   }
@@ -454,33 +662,27 @@ function FoodSection({ selectedDate, setSelectedDate }) {
             ))}
           </div>
 
-          {isToday ? (
-            <>
-              <div className="fs-input-wrap">
-                {loading && <span className="fs-spinner" />}
-                <input
-                  className={`text-input fs-input${loading ? ' fs-input--loading' : ''}`}
-                  type="text"
-                  placeholder="Search foods (e.g. banana, canned soup, Greek yogurt)"
-                  value={query}
-                  onChange={e => { setQuery(e.target.value); setShowManual(false) }}
-                />
-                {query && !loading && (
-                  <button className="fs-clear" onClick={clearQuery} aria-label="Clear search">×</button>
-                )}
-              </div>
-              <button className="fs-manual-link" onClick={() => { setShowManual(v => !v); setConfirmingItem(null) }}>
-                {showManual ? '↑ Hide manual entry' : '+ Enter manually'}
-              </button>
-            </>
-          ) : (
+          <>
+            <div className="fs-input-wrap">
+              {loading && <span className="fs-spinner" />}
+              <input
+                className={`text-input fs-input${loading ? ' fs-input--loading' : ''}`}
+                type="text"
+                placeholder="Search foods (e.g. banana, canned soup, Greek yogurt)"
+                value={query}
+                onChange={e => { setQuery(e.target.value); setShowManual(false) }}
+              />
+              {query && !loading && (
+                <button className="fs-clear" onClick={clearQuery} aria-label="Clear search">×</button>
+              )}
+            </div>
             <button className="fs-manual-link" onClick={() => { setManualDate(selectedDate); setShowManual(v => !v); setConfirmingItem(null) }}>
-              {showManual ? '↑ Hide manual entry' : '+ Add food'}
+              {showManual ? '↑ Hide manual entry' : '+ Enter manually'}
             </button>
-          )}
+          </>
 
-          {isToday && searchError === 'unavailable' && <p className="inline-error">Food search unavailable</p>}
-          {isToday && searchError === 'empty' && <p className="fs-empty">No results — try a more specific name</p>}
+          {searchError === 'unavailable' && <p className="inline-error">Food search unavailable</p>}
+          {searchError === 'empty' && <p className="fs-empty">No results — try a more specific name</p>}
 
           {showManual && (
             <form className="fs-manual-form" onSubmit={handleManualLog}>
@@ -516,7 +718,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 </div>
                 <div className="fs-manual-field">
                   <label className="fs-manual-label">Date</label>
-                  <input className="text-input text-input--narrow" type="date" value={manualDate}
+                  <input className="text-input" type="date" value={manualDate}
                     onChange={e => setManualDate(e.target.value)} />
                 </div>
               </div>
@@ -530,7 +732,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
           )}
 
           {/* Search results — "Select" now opens confirm panel that adds to basket */}
-          {isToday && results.length > 0 && !showManual && (
+          {results.length > 0 && !showManual && (
             <ul className="fs-results">
               {results.map(item => {
                 const isOpen = confirmingItem?.fdcId === item.fdcId
@@ -574,9 +776,16 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                                     onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
                                   <select className="fs-portion-select" value={confirmPortionIdx}
                                     onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
-                                    {confirmPortions.map((p, i) => (
-                                      <option key={i} value={i}>{p.label}{p.label !== '100g' ? ` · ${p.grams}g` : ''}</option>
-                                    ))}
+                                    {confirmPortions.map((p, i) => {
+                                      const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                      return (
+                                        <option key={i} value={i}>
+                                          {p.label === '100g'
+                                            ? '100g'
+                                            : `${name}${confirmIsBeverage && !name.includes('fl oz') ? ` (${gramsToFlOz(p.grams)} fl oz)` : ''} · ${p.grams}g`}
+                                        </option>
+                                      )
+                                    })}
                                   </select>
                                 </>
                               )}
@@ -603,7 +812,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
           )}
 
           {/* Basket */}
-          {isToday && basket.length > 0 && (
+          {basket.length > 0 && (
             <div className="fh-basket">
               <div className="fh-basket-header">
                 <span className="fh-basket-label">Basket</span>
@@ -646,8 +855,43 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 <button className="btn-primary" onClick={handleLogMeal} disabled={loggingMeal}>
                   {loggingMeal ? 'Logging…' : `Log ${activeMealType}`}
                 </button>
-                <button className="fs-cancel-btn" onClick={() => setBasket([])}>Clear</button>
+                <button className="fs-cancel-btn" onClick={() => { setBasket([]); setShowSaveMeal(false); setSavingMealName('') }}>Clear</button>
+                {basket.length >= 2 && !showSaveMeal && (
+                  <button className="fh-save-as-meal-btn" onClick={() => setShowSaveMeal(true)}>
+                    Save as Meal
+                  </button>
+                )}
               </div>
+              {basket.length >= 2 && showSaveMeal && (
+                <div className="fh-basket-save-row">
+                  {saveMealSuccess ? (
+                    <span className="fh-save-meal-success">✓ Saved!</span>
+                  ) : (
+                    <div className="fh-save-inline-form">
+                      <input
+                        className="text-input fh-save-inline-input"
+                        type="text"
+                        placeholder="Name this meal…"
+                        value={savingMealName}
+                        onChange={e => setSavingMealName(e.target.value)}
+                        autoFocus
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && savingMealName.trim()) handleSaveAsMeal()
+                          if (e.key === 'Escape') { setShowSaveMeal(false); setSavingMealName('') }
+                        }}
+                      />
+                      <button className="btn-primary" onClick={handleSaveAsMeal}
+                        disabled={savingMeal || !savingMealName.trim()}>
+                        {savingMeal ? 'Saving…' : 'Save'}
+                      </button>
+                      <button className="fs-cancel-btn"
+                        onClick={() => { setShowSaveMeal(false); setSavingMealName('') }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -664,31 +908,54 @@ function FoodSection({ selectedDate, setSelectedDate }) {
               {MEAL_TYPES.map(mt => {
                 const entries = logByMeal[mt]
                 if (entries.length === 0) return null
+                const isCollapsed = collapsedMeals.has(mt)
                 const mtSodium    = entries.reduce((s, e) => s + (e.sodium_mg    || 0), 0)
                 const mtPotassium = entries.reduce((s, e) => s + (e.potassium_mg || 0), 0)
                 const mtMagnesium = entries.reduce((s, e) => s + (e.magnesium_mg || 0), 0)
                 return (
                   <div key={mt} className="fh-meal-group">
-                    <div className="fh-meal-group-header">
+                    <div
+                      className="fh-meal-group-header fh-meal-group-header--clickable"
+                      onClick={() => setCollapsedMeals(prev => {
+                        const next = new Set(prev)
+                        next.has(mt) ? next.delete(mt) : next.add(mt)
+                        return next
+                      })}
+                    >
                       <span className="fh-meal-group-label">{mt}</span>
-                      <span className="fh-meal-group-totals">
-                        Na {Math.round(mtSodium)}mg · K {Math.round(mtPotassium)}mg · Mg {Math.round(mtMagnesium)}mg
-                      </span>
+                      <div className="fh-meal-group-header-right">
+                        <span className="fh-meal-group-totals">
+                          Na {Math.round(mtSodium)}mg · K {Math.round(mtPotassium)}mg · Mg {Math.round(mtMagnesium)}mg
+                        </span>
+                        <span className={`fh-meals-chevron${isCollapsed ? '' : ' fh-meals-chevron--up'}`} aria-hidden="true">›</span>
+                      </div>
                     </div>
-                    <ul className="fs-log-list">
-                      {entries.map(entry => <LogEntry key={entry.id} entry={entry} {...editProps} />)}
-                    </ul>
+                    <div className={`fh-meal-group-body${isCollapsed ? '' : ' fh-meal-group-body--open'}`}>
+                      <ul className="fs-log-list">
+                        {entries.map(entry => <LogEntry key={entry.id} entry={entry} {...editProps} />)}
+                      </ul>
+                    </div>
                   </div>
                 )
               })}
               {unspecified.length > 0 && (
                 <div className="fh-meal-group">
-                  <div className="fh-meal-group-header">
+                  <div
+                    className="fh-meal-group-header fh-meal-group-header--clickable"
+                    onClick={() => setCollapsedMeals(prev => {
+                      const next = new Set(prev)
+                      next.has('Other') ? next.delete('Other') : next.add('Other')
+                      return next
+                    })}
+                  >
                     <span className="fh-meal-group-label">Other</span>
+                    <span className={`fh-meals-chevron${collapsedMeals.has('Other') ? '' : ' fh-meals-chevron--up'}`} aria-hidden="true">›</span>
                   </div>
-                  <ul className="fs-log-list">
-                    {unspecified.map(entry => <LogEntry key={entry.id} entry={entry} {...editProps} />)}
-                  </ul>
+                  <div className={`fh-meal-group-body${collapsedMeals.has('Other') ? '' : ' fh-meal-group-body--open'}`}>
+                    <ul className="fs-log-list">
+                      {unspecified.map(entry => <LogEntry key={entry.id} entry={entry} {...editProps} />)}
+                    </ul>
+                  </div>
                 </div>
               )}
             </>
@@ -697,39 +964,151 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
         {/* My Meals */}
         <section className="fh-saved-section">
-          <div className="fh-saved-header">
+          <div
+            className="fh-saved-header fh-saved-header--clickable"
+            onClick={() => setMealsExpanded(v => !v)}
+          >
             <span className="fh-saved-title">My Meals</span>
-            <button className="fh-create-meal-btn" onClick={() => setShowCreateMeal(true)}>
-              + Create saved meal
-            </button>
+            <div className="fh-meals-header-right">
+              <button
+                className="fh-create-meal-btn"
+                onClick={e => { e.stopPropagation(); setShowCreateMeal(true) }}
+              >
+                + Create saved meal
+              </button>
+              <span className={`fh-meals-chevron${mealsExpanded ? ' fh-meals-chevron--up' : ''}`} aria-hidden="true">›</span>
+            </div>
           </div>
 
-          <div className="fh-my-meals">
+          <div className={`fh-my-meals${mealsExpanded ? ' fh-my-meals--open' : ''}`}>
             {savedMeals.length === 0 ? (
               <p className="fs-log-empty">No saved meals yet — create one to log it quickly later</p>
             ) : (
               <ul className="fh-my-meals-list">
-                {savedMeals.map(meal => (
-                  <li key={meal.id} className="fh-my-meal-card">
-                    <div className="fh-my-meal-header">
-                      <span className="fh-my-meal-name">{meal.name}</span>
-                      <div className="fh-my-meal-actions">
-                        <button className="btn-primary fh-relog-btn"
-                          onClick={() => loadSavedMealIntoBasket(meal)}>
-                          Add to log
-                        </button>
-                        <button className="fs-log-delete"
-                          onClick={() => handleDeleteSavedMeal(meal.id)}
-                          aria-label="Delete saved meal">×</button>
+                {savedMeals.map(meal => {
+                  const isEditing = editingMealId === meal.id
+                  const displayCount = isEditing ? editingItems.length : meal.items.length
+                  return (
+                    <li key={meal.id} className={`fh-my-meal-card${isEditing ? ' fh-my-meal-card--editing' : ''}`}>
+                      <div className="fh-my-meal-header">
+                        <div className="fh-my-meal-title-group">
+                          <span className="fh-my-meal-name">{meal.name}</span>
+                          <span className="fh-my-meal-count">{displayCount} item{displayCount !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="fh-my-meal-actions">
+                          {!isEditing && (
+                            <button className="btn-primary fh-relog-btn" onClick={() => handleLoadMeal(meal.id)}>
+                              Add to Log
+                            </button>
+                          )}
+                          <div className="fs-log-entry-actions">
+                            <button
+                              className="fs-log-edit-btn"
+                              onClick={() => enterEditMode(meal)}
+                              aria-label={isEditing ? 'Cancel edit' : 'Edit meal'}
+                              title={isEditing ? 'Cancel' : 'Edit meal'}
+                            >✎</button>
+                            {!isEditing && (
+                              <button className="fs-log-delete" onClick={() => setConfirmDeleteMealId(meal.id)} aria-label="Delete saved meal">×</button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <ul className="fh-my-meal-items">
-                      {meal.items.map(item => (
-                        <li key={item.id} className="fh-my-meal-item">{item.food_name}</li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
+
+                      {confirmDeleteMealId === meal.id && (
+                        <div className="fh-meal-delete-confirm">
+                          <span className="fh-meal-delete-confirm-msg">Delete this meal?</span>
+                          <button className="fh-meal-delete-confirm-yes" onClick={() => { handleDeleteSavedMeal(meal.id); setConfirmDeleteMealId(null) }}>Yes, delete</button>
+                          <button className="fh-meal-delete-confirm-cancel" onClick={() => setConfirmDeleteMealId(null)}>Cancel</button>
+                        </div>
+                      )}
+
+                      {isEditing ? (
+                        <div className="fh-meal-edit-section">
+                          {editingItems.map(item => (
+                            <div key={item._key} className="fh-meal-edit-item">
+                              <div className="fh-meal-edit-item-row">
+                                <div className="fh-meal-edit-item-info">
+                                  <span className="fh-meal-edit-item-name">{item.food_name}</span>
+                                  <div className="fh-meal-edit-serving-row">
+                                    <input
+                                      className="text-input text-input--narrow fh-meal-edit-qty"
+                                      type="number" min="0.25" step="0.25"
+                                      value={item.serving_size}
+                                      onChange={e => updateEditItemQty(item._key, e.target.value)}
+                                    />
+                                    <span className="fh-meal-edit-unit">{item.serving_unit}</span>
+                                  </div>
+                                  <div className="fh-meal-edit-nutrients">
+                                    {item._perUnit ? (
+                                      <>Na {item._perUnit.sodium    != null ? Math.round(item._perUnit.sodium    * item.serving_size) : '—'}mg
+                                      {' · '}K {item._perUnit.potassium != null ? Math.round(item._perUnit.potassium * item.serving_size) : '—'}mg
+                                      {' · '}Mg {item._perUnit.magnesium != null ? Math.round(item._perUnit.magnesium * item.serving_size) : '—'}mg</>
+                                    ) : (
+                                      <>Na {item.sodium    != null ? Math.round(item.sodium)    : '—'}mg
+                                      {' · '}K {item.potassium != null ? Math.round(item.potassium) : '—'}mg
+                                      {' · '}Mg {item.magnesium != null ? Math.round(item.magnesium) : '—'}mg</>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="fh-meal-edit-item-actions">
+                                  <button
+                                    className="fh-meal-replace-btn"
+                                    onClick={() => setReplacingItemKey(replacingItemKey === item._key ? null : item._key)}
+                                  >
+                                    {replacingItemKey === item._key ? 'Cancel' : 'Replace'}
+                                  </button>
+                                  <button className="fh-basket-remove" onClick={() => removeEditItem(item._key)} aria-label="Remove">×</button>
+                                </div>
+                              </div>
+
+                              {replacingItemKey === item._key && (
+                                <div className="fh-meal-replace-panel">
+                                  <MealItemSearchPanel
+                                    actionLabel="Replace item"
+                                    onSelect={selected => { replaceEditItem(item._key, selected); setReplacingItemKey(null) }}
+                                    onCancel={() => setReplacingItemKey(null)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          {replacingItemKey === 'new' ? (
+                            <div className="fh-meal-replace-panel fh-meal-replace-panel--add">
+                              <MealItemSearchPanel
+                                actionLabel="Add to meal"
+                                onSelect={selected => { addEditItem(selected); setReplacingItemKey(null) }}
+                                onCancel={() => setReplacingItemKey(null)}
+                              />
+                            </div>
+                          ) : (
+                            <button className="fh-create-meal-btn fh-meal-add-item-btn" onClick={() => setReplacingItemKey('new')}>
+                              + Add item
+                            </button>
+                          )}
+
+                          <div className="fh-meal-edit-footer">
+                            <button
+                              className="btn-primary fh-meal-edit-save-btn"
+                              onClick={() => handleMealEditSave(meal)}
+                              disabled={mealSaving}
+                            >
+                              {mealSaving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button className="fs-cancel-btn" onClick={cancelEditMode}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <ul className="fh-my-meal-items">
+                          {meal.items.map(item => (
+                            <li key={item.id} className="fh-my-meal-item">{item.food_name}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -774,6 +1153,13 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
   const [confirmPortionIdx, setConfirmPortionIdx] = useState(0)
   const [confirmQuantity, setConfirmQuantity] = useState(1)
   const [confirmGramsInput, setConfirmGramsInput] = useState(100)
+  const [confirmIsBeverage, setConfirmIsBeverage] = useState(false)
+
+  const [showManual, setShowManual] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualSodium, setManualSodium] = useState('')
+  const [manualPotassium, setManualPotassium] = useState('')
+  const [manualMagnesium, setManualMagnesium] = useState('')
 
   const debounceRef = useRef(null)
   const searchGenRef = useRef(0)
@@ -795,7 +1181,7 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
     try {
       const data = await api.searchFood(term)
       if (gen !== searchGenRef.current) return
-      const items = Array.isArray(data) ? data.slice(0, 5) : []
+      const items = Array.isArray(data) ? data.slice(0, 10) : []
       setResults(items)
       if (items.length === 0) setSearchError('empty')
     } catch {
@@ -816,9 +1202,12 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
     setConfirmPortionsLoading(true)
     try {
       const data = await api.getFoodPortions(item.fdcId)
-      const portionList = data.portions ?? []
+      console.log('portions API response', data)
+      console.log('isBeverage:', data.isBeverage)
+      const portionList = dedupePortions(data.portions ?? [])
       setConfirmPortions(portionList)
       setConfirmBasePer100g(data.basePer100g ?? null)
+      setConfirmIsBeverage(data.isBeverage ?? false)
       const defaultIdx = portionList.findIndex(p => p.label !== '100g')
       setConfirmPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
     } catch {
@@ -871,12 +1260,36 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
     setSearchError(null)
   }
 
+  function handleAddManualToMeal(e) {
+    e.preventDefault()
+    if (!manualName.trim()) return
+    setMealBasket(prev => [...prev, {
+      key: `manual-${Date.now()}`,
+      food_name: manualName.trim(),
+      fdc_id: null,
+      default_serving_size: 1,
+      sodium_mg_per_100g:    parseFloat(manualSodium)    || null,
+      potassium_mg_per_100g: parseFloat(manualPotassium) || null,
+      magnesium_mg_per_100g: parseFloat(manualMagnesium) || null,
+      portionLabel: '1 srv',
+    }])
+    setManualName(''); setManualSodium(''); setManualPotassium(''); setManualMagnesium('')
+    setShowManual(false)
+  }
+
   async function handleSave() {
     if (!mealName.trim() || mealBasket.length === 0) return
     setSaving(true)
     try {
-      const items = mealBasket.map(({ food_name, fdc_id, default_serving_size, sodium_mg_per_100g, potassium_mg_per_100g, magnesium_mg_per_100g }) => ({
-        food_name, fdc_id, default_serving_size, sodium_mg_per_100g, potassium_mg_per_100g, magnesium_mg_per_100g,
+      const items = mealBasket.map(item => ({
+        food_name: item.food_name,
+        fdc_id: item.fdc_id ? String(parseInt(item.fdc_id)) : null,
+        serving_size: item.default_serving_size,
+        serving_unit: item.portionLabel,
+        calories: null,
+        sodium:    item.sodium_mg_per_100g    ?? null,
+        potassium: item.potassium_mg_per_100g ?? null,
+        magnesium: item.magnesium_mg_per_100g ?? null,
       }))
       await onSave(mealName.trim(), items)
     } catch { } finally {
@@ -902,12 +1315,57 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
             type="text"
             placeholder="Search foods to add"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => { setQuery(e.target.value); setShowManual(false) }}
           />
           {query && !loading && (
             <button className="fs-clear" onClick={() => { setQuery(''); setResults([]); setSearchError(null); setConfirmingItem(null) }} aria-label="Clear">×</button>
           )}
         </div>
+        <button className="fs-manual-link" onClick={() => { setShowManual(v => !v); setConfirmingItem(null) }}>
+          {showManual ? '↑ Hide manual entry' : '+ Enter manually'}
+        </button>
+
+        {showManual && (
+          <form className="fs-manual-form" onSubmit={handleAddManualToMeal}>
+            <div className="fs-manual-field">
+              <label className="fs-manual-label">Food name</label>
+              <input className="text-input" type="text" placeholder="e.g. Homemade lentil soup"
+                value={manualName} onChange={e => setManualName(e.target.value)} required />
+            </div>
+            <div className="fs-manual-row">
+              <div className="fs-manual-field">
+                <label className="fs-manual-label">Sodium</label>
+                <div className="fs-manual-unit-wrap">
+                  <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                    value={manualSodium} onChange={e => setManualSodium(e.target.value)} />
+                  <span className="fs-manual-unit">mg</span>
+                </div>
+              </div>
+              <div className="fs-manual-field">
+                <label className="fs-manual-label">Potassium</label>
+                <div className="fs-manual-unit-wrap">
+                  <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                    value={manualPotassium} onChange={e => setManualPotassium(e.target.value)} />
+                  <span className="fs-manual-unit">mg</span>
+                </div>
+              </div>
+              <div className="fs-manual-field">
+                <label className="fs-manual-label">Magnesium</label>
+                <div className="fs-manual-unit-wrap">
+                  <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                    value={manualMagnesium} onChange={e => setManualMagnesium(e.target.value)} />
+                  <span className="fs-manual-unit">mg</span>
+                </div>
+              </div>
+            </div>
+            <div className="fs-confirm-actions">
+              <button className="btn-primary" type="submit" disabled={!manualName.trim()}>
+                + Add to meal
+              </button>
+              <button type="button" className="fs-cancel-btn" onClick={() => setShowManual(false)}>Cancel</button>
+            </div>
+          </form>
+        )}
 
         {searchError === 'empty' && <p className="fs-empty">No results — try a more specific name</p>}
         {searchError === 'unavailable' && <p className="inline-error">Food search unavailable</p>}
@@ -956,9 +1414,16 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
                                   onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
                                 <select className="fs-portion-select" value={confirmPortionIdx}
                                   onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
-                                  {confirmPortions.map((p, i) => (
-                                    <option key={i} value={i}>{p.label}{p.label !== '100g' ? ` · ${p.grams}g` : ''}</option>
-                                  ))}
+                                  {confirmPortions.map((p, i) => {
+                                    const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                    return (
+                                      <option key={i} value={i}>
+                                        {p.label === '100g'
+                                          ? '100g'
+                                          : `${name}${confirmIsBeverage && !name.includes('fl oz') ? ` (${gramsToFlOz(p.grams)} fl oz)` : ''} · ${p.grams}g`}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
                               </>
                             )}
@@ -1021,6 +1486,278 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
   )
 }
 
+function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [searchError, setSearchError] = useState(null)
+
+  const [confirmingItem, setConfirmingItem] = useState(null)
+  const [confirmPortionsLoading, setConfirmPortionsLoading] = useState(false)
+  const [confirmPortions, setConfirmPortions] = useState([])
+  const [confirmBasePer100g, setConfirmBasePer100g] = useState(null)
+  const [confirmPortionsFailed, setConfirmPortionsFailed] = useState(false)
+  const [confirmPortionIdx, setConfirmPortionIdx] = useState(0)
+  const [confirmQuantity, setConfirmQuantity] = useState(1)
+  const [confirmGramsInput, setConfirmGramsInput] = useState(100)
+  const [confirmIsBeverage, setConfirmIsBeverage] = useState(false)
+
+  const [showManual, setShowManual] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualSodium, setManualSodium] = useState('')
+  const [manualPotassium, setManualPotassium] = useState('')
+  const [manualMagnesium, setManualMagnesium] = useState('')
+
+  const debounceRef = useRef(null)
+  const searchGenRef = useRef(0)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    searchGenRef.current += 1
+    setResults([])
+    setSearchError(null)
+    if (!query.trim()) { setConfirmingItem(null); return }
+    debounceRef.current = setTimeout(() => doSearch(query.trim()), 400)
+    return () => clearTimeout(debounceRef.current)
+  }, [query])
+
+  async function doSearch(term) {
+    const gen = searchGenRef.current
+    setLoading(true)
+    setConfirmingItem(null)
+    try {
+      const data = await api.searchFood(term)
+      if (gen !== searchGenRef.current) return
+      const items = Array.isArray(data) ? data.slice(0, 10) : []
+      setResults(items)
+      if (items.length === 0) setSearchError('empty')
+    } catch {
+      if (gen !== searchGenRef.current) return
+      setSearchError('unavailable')
+    } finally {
+      if (gen === searchGenRef.current) setLoading(false)
+    }
+  }
+
+  async function handleSelect(item) {
+    setConfirmingItem(item)
+    setConfirmQuantity(1)
+    setConfirmPortionsFailed(false)
+    setConfirmPortions([])
+    setConfirmPortionIdx(0)
+    setConfirmBasePer100g(null)
+    setConfirmPortionsLoading(true)
+    try {
+      const data = await api.getFoodPortions(item.fdcId)
+      const portionList = dedupePortions(data.portions ?? [])
+      setConfirmPortions(portionList)
+      setConfirmBasePer100g(data.basePer100g ?? null)
+      setConfirmIsBeverage(data.isBeverage ?? false)
+      const defaultIdx = portionList.findIndex(p => p.label !== '100g')
+      setConfirmPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
+    } catch {
+      setConfirmPortionsFailed(true)
+      setConfirmGramsInput(100)
+    } finally {
+      setConfirmPortionsLoading(false)
+    }
+  }
+
+  function handleConfirm() {
+    if (!confirmingItem) return
+    const grams = confirmPortionsFailed ? confirmGramsInput : (confirmPortions[confirmPortionIdx]?.grams ?? 100)
+    const qty   = confirmPortionsFailed ? 1 : confirmQuantity
+    const portionLabel = confirmPortionsFailed
+      ? `${grams}g`
+      : (confirmPortions[confirmPortionIdx]?.label ?? '100g')
+    const base = confirmBasePer100g ?? confirmingItem
+    const baseSodium    = confirmPortionsFailed ? confirmingItem.sodium_mg    : base?.sodium_mg
+    const basePotassium = confirmPortionsFailed ? confirmingItem.potassium_mg : base?.potassium_mg
+    const baseMagnesium = confirmPortionsFailed ? confirmingItem.magnesium_mg : base?.magnesium_mg
+    const sodiumPU    = calcMineral(baseSodium,    grams, 1)
+    const potassiumPU = calcMineral(basePotassium, grams, 1)
+    const magnesiumPU = calcMineral(baseMagnesium, grams, 1)
+    onSelect({
+      food_name: confirmingItem.description,
+      fdc_id: confirmingItem.fdcId ?? null,
+      serving_size: qty,
+      serving_unit: portionLabel,
+      sodium:    sodiumPU,
+      potassium: potassiumPU,
+      magnesium: magnesiumPU,
+      calories: null,
+      _perUnit: { sodium: sodiumPU, potassium: potassiumPU, magnesium: magnesiumPU },
+    })
+  }
+
+  function handleManualConfirm(e) {
+    e.preventDefault()
+    if (!manualName.trim()) return
+    const sod = parseFloat(manualSodium)    || null
+    const pot = parseFloat(manualPotassium) || null
+    const mag = parseFloat(manualMagnesium) || null
+    onSelect({
+      food_name: manualName.trim(),
+      fdc_id: null,
+      serving_size: 1,
+      serving_unit: '1 srv',
+      sodium: sod, potassium: pot, magnesium: mag, calories: null,
+      _perUnit: { sodium: sod, potassium: pot, magnesium: mag },
+    })
+  }
+
+  const confirmGrams = confirmPortionsFailed ? confirmGramsInput : (confirmPortions[confirmPortionIdx]?.grams ?? 100)
+  const confirmBase  = confirmBasePer100g ?? confirmingItem
+  const confirmSodium    = confirmingItem ? calcMineral(confirmBase?.sodium_mg,    confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
+  const confirmPotassium = confirmingItem ? calcMineral(confirmBase?.potassium_mg, confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
+  const confirmMagnesium = confirmingItem ? calcMineral(confirmBase?.magnesium_mg, confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
+
+  return (
+    <div className="fh-item-search-panel">
+      <div className="fs-input-wrap">
+        {loading && <span className="fs-spinner" />}
+        <input
+          className={`text-input fs-input${loading ? ' fs-input--loading' : ''}`}
+          type="text"
+          placeholder="Search foods…"
+          value={query}
+          onChange={e => { setQuery(e.target.value); setShowManual(false) }}
+          autoFocus
+        />
+        {query && !loading && (
+          <button className="fs-clear" onClick={() => { setQuery(''); setResults([]); setSearchError(null); setConfirmingItem(null) }} aria-label="Clear">×</button>
+        )}
+      </div>
+
+      <button className="fs-manual-link" onClick={() => { setShowManual(v => !v); setConfirmingItem(null) }}>
+        {showManual ? '↑ Hide manual entry' : '+ Enter manually'}
+      </button>
+
+      {showManual && (
+        <form className="fs-manual-form" onSubmit={handleManualConfirm}>
+          <div className="fs-manual-field">
+            <label className="fs-manual-label">Food name</label>
+            <input className="text-input" type="text" placeholder="e.g. Homemade lentil soup"
+              value={manualName} onChange={e => setManualName(e.target.value)} required />
+          </div>
+          <div className="fs-manual-row">
+            <div className="fs-manual-field">
+              <label className="fs-manual-label">Sodium</label>
+              <div className="fs-manual-unit-wrap">
+                <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                  value={manualSodium} onChange={e => setManualSodium(e.target.value)} />
+                <span className="fs-manual-unit">mg</span>
+              </div>
+            </div>
+            <div className="fs-manual-field">
+              <label className="fs-manual-label">Potassium</label>
+              <div className="fs-manual-unit-wrap">
+                <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                  value={manualPotassium} onChange={e => setManualPotassium(e.target.value)} />
+                <span className="fs-manual-unit">mg</span>
+              </div>
+            </div>
+            <div className="fs-manual-field">
+              <label className="fs-manual-label">Magnesium</label>
+              <div className="fs-manual-unit-wrap">
+                <input className="text-input text-input--narrow" type="number" min="0" placeholder="0"
+                  value={manualMagnesium} onChange={e => setManualMagnesium(e.target.value)} />
+                <span className="fs-manual-unit">mg</span>
+              </div>
+            </div>
+          </div>
+          <div className="fs-confirm-actions">
+            <button className="btn-primary" type="submit" disabled={!manualName.trim()}>{actionLabel}</button>
+            <button type="button" className="fs-cancel-btn" onClick={() => setShowManual(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {searchError === 'unavailable' && <p className="inline-error">Food search unavailable</p>}
+      {searchError === 'empty' && <p className="fs-empty">No results — try a more specific name</p>}
+
+      {results.length > 0 && !showManual && (
+        <ul className="fs-results fh-item-search-results">
+          {results.map(item => {
+            const isOpen = confirmingItem?.fdcId === item.fdcId
+            return (
+              <li key={item.fdcId} className="fs-result-li">
+                <div className={`fs-result-card${isOpen ? ' fs-result-card--open' : ''}`}>
+                  <div className="fs-result-body">
+                    <div className="fs-result-name">{item.description}</div>
+                    <div className="fs-badges">
+                      <MineralBadge value={item.sodium_mg}    type="sodium"    />
+                      <MineralBadge value={item.potassium_mg} type="potassium" />
+                      <MineralBadge value={item.magnesium_mg} type="magnesium" />
+                    </div>
+                  </div>
+                  <button className="fs-select-btn" onClick={() => handleSelect(item)}>Select</button>
+                </div>
+                <div className={`fs-confirm${isOpen ? ' fs-confirm--open' : ''}`}>
+                  <div className="fs-confirm-inner">
+                    {isOpen && confirmPortionsLoading ? (
+                      <div className="fs-confirm-loading">
+                        <span className="fs-spinner fs-spinner--inline" />
+                        <span className="fs-confirm-loading-text">Loading portions…</span>
+                      </div>
+                    ) : isOpen ? (
+                      <>
+                        <p className="fs-confirm-name">{item.description}</p>
+                        <div className="fs-servings-row">
+                          <label className="fs-servings-label" htmlFor={`misp-${item.fdcId}`}>Quantity</label>
+                          {confirmPortionsFailed ? (
+                            <>
+                              <input id={`misp-${item.fdcId}`} className="text-input text-input--narrow"
+                                type="number" min="1" step="1" value={confirmGramsInput}
+                                onChange={e => setConfirmGramsInput(Math.max(1, parseInt(e.target.value) || 100))} />
+                              <span className="fs-serving-hint">g</span>
+                            </>
+                          ) : (
+                            <>
+                              <input id={`misp-${item.fdcId}`} className="text-input text-input--narrow"
+                                type="number" min="0.25" step="0.25" value={confirmQuantity}
+                                onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
+                              <select className="fs-portion-select" value={confirmPortionIdx}
+                                onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
+                                {confirmPortions.map((p, i) => {
+                                  const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                  return (
+                                    <option key={i} value={i}>
+                                      {p.label === '100g' ? '100g'
+                                        : `${name}${confirmIsBeverage && !name.includes('fl oz') ? ` (${gramsToFlOz(p.grams)} fl oz)` : ''} · ${p.grams}g`}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                            </>
+                          )}
+                        </div>
+                        <div className="fs-computed">
+                          <ComputedMineral label="Sodium"    value={confirmSodium}    />
+                          <ComputedMineral label="Potassium" value={confirmPotassium} />
+                          <ComputedMineral label="Magnesium" value={confirmMagnesium} />
+                        </div>
+                        <div className="fs-confirm-actions">
+                          <button className="btn-primary" onClick={handleConfirm}>{actionLabel}</button>
+                          <button className="fs-cancel-btn" onClick={() => setConfirmingItem(null)}>Cancel</button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <div className="fh-item-search-dismiss">
+        <button className="fs-cancel-btn" onClick={onCancel}>↑ Close search</button>
+      </div>
+    </div>
+  )
+}
+
 function LogEntry({
   entry, editingId,
   editPortionsLoading, editPortions, editBasePer100g,
@@ -1030,8 +1767,11 @@ function LogEntry({
   editPotassium, setEditPotassium,
   editMagnesium, setEditMagnesium,
   editComputedSodium, editComputedPotassium, editComputedMagnesium,
+  editIsBeverage,
+  onEditManualQtyChange,
   editSaving, onEdit, onEditSave, onCancelEdit, onDelete,
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   return (
     <li className={`fs-log-entry${editingId === entry.id ? ' fs-log-entry--editing' : ''}`}>
       <div className="fs-log-entry-row">
@@ -1047,9 +1787,17 @@ function LogEntry({
         </div>
         <div className="fs-log-entry-actions">
           <button className="fs-log-edit-btn" onClick={() => onEdit(entry)} aria-label="Edit" title="Edit">✎</button>
-          <button className="fs-log-delete" onClick={() => onDelete(entry.id)} aria-label="Remove">×</button>
+          <button className="fs-log-delete" onClick={() => setConfirmingDelete(true)} aria-label="Remove">×</button>
         </div>
       </div>
+
+      {confirmingDelete && (
+        <div className="fh-meal-delete-confirm">
+          <span className="fh-meal-delete-confirm-msg">Delete this item?</span>
+          <button className="fh-meal-delete-confirm-yes" onClick={() => onDelete(entry.id)}>Yes, delete</button>
+          <button className="fh-meal-delete-confirm-cancel" onClick={() => setConfirmingDelete(false)}>Cancel</button>
+        </div>
+      )}
 
       {editingId === entry.id && (
         <div className="fs-edit-panel">
@@ -1058,53 +1806,47 @@ function LogEntry({
               <span className="fs-spinner fs-spinner--inline" />
               <span className="fs-confirm-loading-text">Loading portions…</span>
             </div>
-          ) : editPortions.length > 0 && editBasePer100g ? (
+          ) : editPortions.length > 0 ? (
             <>
               <div className="fs-servings-row">
                 <label className="fs-servings-label">Quantity</label>
                 <input className="text-input text-input--narrow" type="number" min="0.25" step="0.25"
                   value={editQuantity}
-                  onChange={e => setEditQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
+                  onChange={e => onEditManualQtyChange(e.target.value)} />
                 <select className="fs-portion-select" value={editPortionIdx}
                   onChange={e => setEditPortionIdx(parseInt(e.target.value))}>
-                  {editPortions.map((p, i) => (
-                    <option key={i} value={i}>{p.label}{p.label !== '100g' ? ` · ${p.grams}g` : ''}</option>
-                  ))}
+                  {editPortions.map((p, i) => {
+                    const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                    return (
+                      <option key={i} value={i}>
+                        {p.label === '100g'
+                          ? '100g'
+                          : `${name}${editIsBeverage && !name.includes('fl oz') ? ` (${gramsToFlOz(p.grams)} fl oz)` : ''} · ${p.grams}g`}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
               <div className="fs-computed">
-                <ComputedMineral label="Sodium"    value={editComputedSodium}    />
-                <ComputedMineral label="Potassium" value={editComputedPotassium} />
-                <ComputedMineral label="Magnesium" value={editComputedMagnesium} />
+                <ComputedMineral label="Sodium"    value={editBasePer100g ? editComputedSodium    : (parseFloat(editSodium)    || null)} />
+                <ComputedMineral label="Potassium" value={editBasePer100g ? editComputedPotassium : (parseFloat(editPotassium) || null)} />
+                <ComputedMineral label="Magnesium" value={editBasePer100g ? editComputedMagnesium : (parseFloat(editMagnesium) || null)} />
               </div>
             </>
           ) : (
-            <div className="fs-manual-row">
-              <div className="fs-manual-field">
-                <label className="fs-manual-label">Sodium</label>
-                <div className="fs-manual-unit-wrap">
-                  <input className="text-input text-input--narrow" type="number" min="0"
-                    value={editSodium} onChange={e => setEditSodium(e.target.value)} />
-                  <span className="fs-manual-unit">mg</span>
-                </div>
+            <>
+              <div className="fs-servings-row">
+                <label className="fs-servings-label">Quantity</label>
+                <input className="text-input text-input--narrow" type="number" min="0.25" step="0.25"
+                  value={editQuantity}
+                  onChange={e => onEditManualQtyChange(e.target.value)} />
               </div>
-              <div className="fs-manual-field">
-                <label className="fs-manual-label">Potassium</label>
-                <div className="fs-manual-unit-wrap">
-                  <input className="text-input text-input--narrow" type="number" min="0"
-                    value={editPotassium} onChange={e => setEditPotassium(e.target.value)} />
-                  <span className="fs-manual-unit">mg</span>
-                </div>
+              <div className="fs-computed">
+                <ComputedMineral label="Sodium"    value={parseFloat(editSodium)    || null} />
+                <ComputedMineral label="Potassium" value={parseFloat(editPotassium) || null} />
+                <ComputedMineral label="Magnesium" value={parseFloat(editMagnesium) || null} />
               </div>
-              <div className="fs-manual-field">
-                <label className="fs-manual-label">Magnesium</label>
-                <div className="fs-manual-unit-wrap">
-                  <input className="text-input text-input--narrow" type="number" min="0"
-                    value={editMagnesium} onChange={e => setEditMagnesium(e.target.value)} />
-                  <span className="fs-manual-unit">mg</span>
-                </div>
-              </div>
-            </div>
+            </>
           )}
           <div className="fs-confirm-actions fs-edit-actions">
             <button className="btn-primary" onClick={() => onEditSave(entry)} disabled={editSaving}>
@@ -1401,18 +2143,39 @@ function HydrationTracker({ selectedDate }) {
   const [todayOz, setTodayOz] = useState(0)
   const [input, setInput] = useState('')
   const [logging, setLogging] = useState(false)
+  const [editingTotal, setEditingTotal] = useState(false)
+  const [totalInput, setTotalInput] = useState('')
+  const [savingTotal, setSavingTotal] = useState(false)
 
   useEffect(() => {
     setTodayOz(0)
+    setEditingTotal(false)
     fetch(`/api/hydration?date=${selectedDate}`)
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
-        if (!data) return
-        const total = data.total_oz ?? data.oz ?? null
-        if (total != null) setTodayOz(total)
+        if (!Array.isArray(data)) return
+        setTodayOz(data.reduce((sum, row) => sum + (row.water_oz ?? 0), 0))
       })
       .catch(() => {})
   }, [selectedDate])
+
+  function openTotalEdit() {
+    setTotalInput(String(Math.round(todayOz * 10) / 10))
+    setEditingTotal(true)
+  }
+
+  async function handleTotalSave() {
+    const oz = parseFloat(totalInput)
+    if (isNaN(oz) || oz < 0) return
+    setSavingTotal(true)
+    try {
+      await api.setHydrationTotal(oz, selectedDate)
+      setTodayOz(oz)
+      setEditingTotal(false)
+    } finally {
+      setSavingTotal(false)
+    }
+  }
 
   async function handleAdd(e) {
     e.preventDefault()
@@ -1425,6 +2188,7 @@ function HydrationTracker({ selectedDate }) {
       await api.logHydration(oz, selectedDate)
     } catch {
       setTodayOz(prev => prev - oz)
+      setInput(String(oz))
     } finally {
       setLogging(false)
     }
@@ -1432,6 +2196,7 @@ function HydrationTracker({ selectedDate }) {
 
   const pct = Math.min((todayOz / DAILY_GOAL_OZ) * 100, 100)
   const remaining = Math.max(DAILY_GOAL_OZ - todayOz, 0)
+  const displayOz = Math.round(todayOz * 10) / 10
 
   return (
     <section className="fh-card fh-card--hydration">
@@ -1440,13 +2205,38 @@ function HydrationTracker({ selectedDate }) {
 
       <div className="hydration-display">
         <div className="hydration-numbers">
-          <span className="hydration-current">{todayOz}</span>
+          {editingTotal ? (
+            <>
+              <input
+                className="text-input hydration-total-input"
+                type="number"
+                min="0"
+                max="500"
+                step="0.5"
+                value={totalInput}
+                onChange={e => setTotalInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleTotalSave(); if (e.key === 'Escape') setEditingTotal(false) }}
+                autoFocus
+              />
+              <button className="hydration-total-save" onClick={handleTotalSave} disabled={savingTotal} title="Save">✓</button>
+              <button className="hydration-total-cancel" onClick={() => setEditingTotal(false)} disabled={savingTotal} title="Cancel">×</button>
+            </>
+          ) : (
+            <button
+              className="hydration-current hydration-current--editable"
+              onClick={openTotalEdit}
+              title="Edit total"
+              disabled={savingTotal}
+            >
+              {displayOz}
+            </button>
+          )}
           <span className="hydration-sep">/</span>
           <span className="hydration-goal">{DAILY_GOAL_OZ}</span>
           <span className="hydration-unit">oz</span>
         </div>
         {remaining > 0 ? (
-          <p className="hydration-remaining">{remaining} oz remaining</p>
+          <p className="hydration-remaining">{Math.round(remaining * 10) / 10} oz remaining</p>
         ) : (
           <p className="hydration-complete">Daily goal reached</p>
         )}
