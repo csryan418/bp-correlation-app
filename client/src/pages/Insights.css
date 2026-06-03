@@ -262,93 +262,6 @@
   line-height: 1.5;
 }
 
-/* ── Section 2: Meal insights ────────────────────────────────── */
-
-.ins-meal-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-  gap: 1rem;
-}
-
-.ins-meal-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 1.125rem 1.25rem;
-  box-shadow: var(--shadow-card);
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  transition: border-color 0.2s;
-}
-
-.ins-meal-card:hover {
-  border-color: var(--border-warm);
-}
-
-.ins-meal-food {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.01em;
-}
-
-.ins-meal-compare {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.ins-meal-reading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.125rem;
-  flex: 1;
-}
-
-.ins-meal-reading-val {
-  font-family: var(--font-heading);
-  font-size: 1.5rem;
-  color: var(--text-primary);
-  line-height: 1;
-}
-
-.ins-meal-reading--high .ins-meal-reading-val {
-  color: var(--red);
-}
-
-.ins-meal-reading--low .ins-meal-reading-val {
-  color: var(--green);
-}
-
-.ins-meal-reading-label {
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.ins-meal-vs {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.ins-meal-detail {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.ins-meal-sys {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
 /* ── Sections 3-5: Scatter chart grids ──────────────────────── */
 
 .ins-scatter-grid-2 {
@@ -498,6 +411,17 @@
   font-family: var(--font-heading);
   color: var(--text-muted);
   letter-spacing: -0.01em;
+}
+
+/* ── Scatter chart summary text ─────────────────────────────── */
+
+.ins-scatter-summary {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* ── Section 6: Supplement correlation ───────────────────────── */
@@ -752,10 +676,6 @@
 
   .ins-corr-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-
-  .ins-meal-grid {
-    grid-template-columns: 1fr;
   }
 
   .ins-scatter-grid-2,

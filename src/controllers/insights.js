@@ -385,7 +385,81 @@ export function getFullInsights(req, res) {
     return absB - absA;
   });
 
-  // ── Meal-level insights ──────────────────────────────────────
+  // ── Meal sodium correlation ───────────────────────────────────
+  const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+
+  const mealSodiumByDateStmt = db.prepare(`
+    SELECT date, SUM(COALESCE(sodium_mg, 0)) AS total_sodium
+    FROM food_log
+    WHERE meal_type = ?
+    GROUP BY date
+  `);
+  const mealItemsStmt = db.prepare(`
+    SELECT food_name, sodium_mg, date
+    FROM food_log
+    WHERE meal_type = ? AND sodium_mg IS NOT NULL
+  `);
+  const mealSodiumCorrelation = [];
+
+  for (const mealType of MEAL_TYPES) {
+    const sodiumByDate = mealSodiumByDateStmt.all(mealType);
+
+    const paired = sodiumByDate
+      .map(r => {
+        const bp = bpNextMorning.get(r.date);
+        if (!bp || bp.diastolic == null || bp.systolic == null) return null;
+        return { date: r.date, sodium: r.total_sodium, diastolic: bp.diastolic, systolic: bp.systolic };
+      })
+      .filter(Boolean);
+
+    if (paired.length < 7) {
+      mealSodiumCorrelation.push({ meal_type: mealType, paired_days: paired.length, below_threshold: true });
+      continue;
+    }
+
+    const sortedBySodium = [...paired].sort((a, b) => a.sodium - b.sodium);
+    const mid = Math.floor(sortedBySodium.length / 2);
+    const medianSodium = sortedBySodium.length % 2 !== 0
+      ? sortedBySodium[mid].sodium
+      : (sortedBySodium[mid - 1].sodium + sortedBySodium[mid].sodium) / 2;
+
+    const highDays = paired.filter(p => p.sodium > medianSodium);
+    const lowDays  = paired.filter(p => p.sodium <= medianSodium);
+
+    const avgDiaHigh = highDays.length > 0 ? highDays.reduce((s, p) => s + p.diastolic, 0) / highDays.length : null;
+    const avgDiaLow  = lowDays.length  > 0 ? lowDays.reduce( (s, p) => s + p.diastolic, 0) / lowDays.length  : null;
+    const avgSysHigh = highDays.length > 0 ? highDays.reduce((s, p) => s + p.systolic,  0) / highDays.length : null;
+    const avgSysLow  = lowDays.length  > 0 ? lowDays.reduce( (s, p) => s + p.systolic,  0) / lowDays.length  : null;
+
+    const highDatesSorted = highDays.map(p => p.date).sort();
+    const lastHighSodiumDate = highDatesSorted.length > 0 ? highDatesSorted[highDatesSorted.length - 1] : null;
+
+    const highDateSet = new Set(highDays.map(p => p.date));
+    const allItems = mealItemsStmt.all(mealType);
+    let topItem = null;
+    for (const item of allItems) {
+      if (!highDateSet.has(item.date)) continue;
+      if (!topItem || item.sodium_mg > topItem.sodium_mg) {
+        topItem = { food_name: item.food_name, sodium_mg: item.sodium_mg };
+      }
+    }
+
+    mealSodiumCorrelation.push({
+      meal_type:    mealType,
+      median_sodium: round2(medianSodium),
+      avg_dia_high:  round2(avgDiaHigh),
+      avg_dia_low:   round2(avgDiaLow),
+      avg_sys_high:  round2(avgSysHigh),
+      avg_sys_low:   round2(avgSysLow),
+      difference:    avgDiaHigh != null && avgDiaLow != null ? round2(avgDiaHigh - avgDiaLow) : null,
+      paired_days:   paired.length,
+      last_high_sodium_date: lastHighSodiumDate,
+      top_sodium_item: topItem,
+      below_threshold: false,
+    });
+  }
+
+  // ── Individual food-level insights ────────────────────────────
   const foodDateRows = db.prepare(`
     SELECT food_name, date FROM food_log GROUP BY food_name, date ORDER BY food_name
   `).all();
@@ -521,6 +595,7 @@ export function getFullInsights(req, res) {
   res.json({
     correlations,
     mealInsights: topMealInsights,
+    mealSodiumCorrelation,
     scatterData: {
       sodium:         buildScatter(sodiumMap),
       potassium:      buildScatter(potassiumMap),

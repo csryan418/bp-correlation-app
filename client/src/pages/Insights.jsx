@@ -213,6 +213,26 @@ function ScatterChart({ data, xLabel, xUnit, rDiastolic, rSystolic }) {
 
 // ── ScatterCard ───────────────────────────────────────────────
 
+function scatterSummary(xLabel, rDiastolic, rSystolic, n) {
+  if (n < 7 || rDiastolic == null) return null
+  const abs = Math.abs(rDiastolic)
+  let main
+  if (abs < 0.05) {
+    main = `No meaningful association found between ${xLabel.toLowerCase()} and next-morning diastolic yet (${n} days).`
+  } else {
+    const strength = abs >= 0.30 ? 'strongly associated'
+      : abs >= 0.15 ? 'moderately associated'
+      : 'weakly associated'
+    const dir = rDiastolic < 0 ? 'lower' : 'higher'
+    main = `Higher ${xLabel.toLowerCase()} is ${strength} with ${dir} next-morning diastolic (DIA r = ${fmtR(rDiastolic)}, ${n} days).`
+  }
+  let note = null
+  if (rSystolic != null && Math.abs(rSystolic) >= 0.20 && Math.sign(rSystolic) !== Math.sign(rDiastolic)) {
+    note = `Note: systolic shows the opposite pattern (SYS r = ${fmtR(rSystolic)}).`
+  }
+  return { main, note }
+}
+
 function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
   const n = data?.length ?? 0
   const MIN_DAYS = 7
@@ -221,6 +241,8 @@ function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
     : Math.abs(rDiastolic) >= 0.4 ? 'ins-r--strong'
     : Math.abs(rDiastolic) >= 0.2 ? 'ins-r--moderate'
     : 'ins-r--weak'
+
+  const summary = scatterSummary(xLabel, rDiastolic, rSystolic, n)
 
   return (
     <section className="ins-chart-card">
@@ -249,6 +271,12 @@ function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
         rDiastolic={rDiastolic}
         rSystolic={rSystolic}
       />
+      {summary && (
+        <p className="ins-scatter-summary">
+          {summary.main}
+          {summary.note && <> {summary.note}</>}
+        </p>
+      )}
     </section>
   )
 }
@@ -321,32 +349,83 @@ function CorrelationCard({ corr, insightText }) {
   )
 }
 
-// ── MealInsightCard ───────────────────────────────────────────
+// ── MealSodiumCard ────────────────────────────────────────────
 
-function MealInsightCard({ insight }) {
-  const { food, avg_dia_on, avg_dia_off, avg_sys_on, avg_sys_off, n_on, dia_diff } = insight
-  const higher = avg_dia_on > avg_dia_off
+function MealSodiumCard({ item }) {
+  if (!item) return null
+
+  if (item.below_threshold) {
+    const pct = Math.min(((item.paired_days ?? 0) / 7) * 100, 100)
+    return (
+      <div className="ins-supp-card ins-supp-card--dim">
+        <div className="ins-supp-name">{item.meal_type}</div>
+        <div className="ins-supp-progress-track">
+          <div className="ins-supp-progress-bar" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="ins-supp-meta">{item.paired_days ?? 0}/7 days logged</p>
+      </div>
+    )
+  }
+
+  const diff = item.difference ?? null
+  let insight, dotClass
+  if (diff !== null && diff >= 3) {
+    insight = `On high-sodium ${item.meal_type.toLowerCase()} days, your next-morning diastolic averaged ${Math.round(item.avg_dia_high)} mmHg vs ${Math.round(item.avg_dia_low)} mmHg on lower-sodium days — a ${Math.round(diff)} mmHg difference.`
+    dotClass = 'ins-dot--red'
+  } else if (diff !== null && diff <= -3) {
+    insight = `Surprisingly, high-sodium ${item.meal_type.toLowerCase()} days were associated with lower next-morning diastolic (${Math.abs(Math.round(diff))} mmHg lower). Worth watching as more data accumulates.`
+    dotClass = 'ins-dot--green'
+  } else {
+    insight = `No meaningful difference in next-morning diastolic based on ${item.meal_type.toLowerCase()} sodium levels yet.`
+    dotClass = 'ins-dot--gray'
+  }
+
+  let formattedDate = null
+  if (item.last_high_sodium_date) {
+    const [y, m, d] = item.last_high_sodium_date.split('-').map(Number)
+    formattedDate = new Date(y, m - 1, d).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    })
+  }
 
   return (
-    <div className="ins-meal-card">
-      <div className="ins-meal-food">{food}</div>
-      <div className="ins-meal-compare">
-        <div className={`ins-meal-reading${higher ? ' ins-meal-reading--high' : ' ins-meal-reading--low'}`}>
-          <span className="ins-meal-reading-val">{avg_dia_on}</span>
-          <span className="ins-meal-reading-label">DIA on days logged</span>
+    <div className="ins-supp-card">
+      <div className="ins-supp-header">
+        <div className="ins-supp-name">{item.meal_type}</div>
+        <span className={`ins-traffic-dot ${dotClass}`} />
+      </div>
+      <div className="ins-supp-cols">
+        <div className="ins-supp-col">
+          <span className="ins-supp-col-label">
+            High sodium days<br />(above {Math.round(item.median_sodium ?? 0)}mg)
+          </span>
+          <span className="ins-supp-dia">
+            {item.avg_dia_high != null ? Math.round(item.avg_dia_high) : '—'}
+          </span>
+          <span className="ins-supp-sys">
+            {item.avg_sys_high != null ? `${Math.round(item.avg_sys_high)} sys` : '—'}
+          </span>
         </div>
-        <div className="ins-meal-vs">vs</div>
-        <div className="ins-meal-reading">
-          <span className="ins-meal-reading-val">{avg_dia_off}</span>
-          <span className="ins-meal-reading-label">DIA on other days</span>
+        <div className="ins-supp-divider" />
+        <div className="ins-supp-col">
+          <span className="ins-supp-col-label">Lower sodium days</span>
+          <span className="ins-supp-dia">
+            {item.avg_dia_low != null ? Math.round(item.avg_dia_low) : '—'}
+          </span>
+          <span className="ins-supp-sys">
+            {item.avg_sys_low != null ? `${Math.round(item.avg_sys_low)} sys` : '—'}
+          </span>
         </div>
       </div>
-      <p className="ins-meal-detail">
-        On {n_on} day{n_on !== 1 ? 's' : ''} you logged {food}, your next-morning diastolic averaged{' '}
-        <strong>{avg_dia_on}</strong> mmHg vs <strong>{avg_dia_off}</strong> mmHg on other days
-        — a <strong>{dia_diff} mmHg</strong> difference.
+      <p className="ins-supp-insight">{insight}</p>
+      <p className="ins-supp-meta">
+        {formattedDate && (
+          <>Last high-sodium {item.meal_type.toLowerCase()}: {formattedDate}. </>
+        )}
+        {item.top_sodium_item && (
+          <>Biggest sodium contributor: {item.top_sodium_item.food_name} ({Math.round(item.top_sodium_item.sodium_mg)}mg)</>
+        )}
       </p>
-      <p className="ins-meal-sys">SYS: {avg_sys_on} on / {avg_sys_off} off days</p>
     </div>
   )
 }
@@ -519,13 +598,14 @@ export default function Insights() {
 
   const {
     correlations,
-    mealInsights,
+    mealSodiumCorrelation,
     scatterData,
     thresholds,
     hydrationInsight,
     supplementCorrelations,
   } = data
-  const suppList = Array.isArray(supplementCorrelations) ? supplementCorrelations : []
+  const suppList       = Array.isArray(supplementCorrelations) ? supplementCorrelations : []
+  const mealSodiumList = Array.isArray(mealSodiumCorrelation)  ? mealSodiumCorrelation  : []
 
   return (
     <InsightsErrorBoundary>
@@ -605,24 +685,26 @@ export default function Insights() {
         })()}
       </section>
 
-      {/* ── Section 2: Meal-level Insights ── */}
+      {/* ── Section 2: Meal Sodium Patterns ── */}
       <section className="ins-section">
-        <h2 className="ins-section-title">Meal-Level Patterns</h2>
+        <h2 className="ins-section-title">Meal Sodium Patterns</h2>
         <p className="ins-section-sub">
-          Foods logged on 3+ days where next-morning diastolic differs by ≥3 mmHg. Sorted by largest difference.
+          High-sodium vs lower-sodium days by meal type — effect on next-morning diastolic.
         </p>
-        {mealInsights.length === 0 ? (
+        {mealSodiumList.length === 0 ? (
           <div className="ins-empty-card">
-            Keep logging — meal patterns will appear here once you have more data across more days.
+            Keep logging meals — sodium patterns by meal type will appear here once you have more data.
           </div>
         ) : (
-          <div className="ins-meal-grid">
-            {mealInsights.map(insight => (
-              <MealInsightCard key={insight.food} insight={insight} />
+          <div className="ins-supp-grid">
+            {mealSodiumList.map(item => (
+              <MealSodiumCard key={item.meal_type} item={item} />
             ))}
           </div>
         )}
       </section>
+
+
 
       {/* ── Section 3: Minerals vs BP ── */}
       <section className="ins-section">
