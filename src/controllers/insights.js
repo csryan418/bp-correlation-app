@@ -341,6 +341,12 @@ export function getFullInsights(req, res) {
   const stepsMap         = new Map(actRows.filter(r => r.steps           != null).map(r => [r.date, r.steps]));
   const activityScoreMap = new Map(actRows.filter(r => r.activity_score  != null).map(r => [r.date, r.activity_score]));
 
+  // ── Hydration ────────────────────────────────────────────────
+  const hydrationRows = db.prepare(`
+    SELECT date, SUM(water_oz) AS total_oz FROM hydration_log GROUP BY date
+  `).all();
+  const hydrationMap = new Map(hydrationRows.map(r => [r.date, r.total_oz]));
+
   // ── Minerals ─────────────────────────────────────────────────
   const foodDailyRows = db.prepare(`
     SELECT date,
@@ -371,6 +377,7 @@ export function getFullInsights(req, res) {
     calcCorr(potassiumMap,  'Daily Potassium',          'mg'),
     calcCorr(magnesiumMap,  'Daily Magnesium',          'mg'),
     calcCorr(nakMap,        'Sodium:Potassium Ratio',   ':1'),
+    calcCorr(hydrationMap,  'Daily Water Intake',       'oz'),
   ];
   correlations.sort((a, b) => {
     const absA = a.r_diastolic != null ? Math.abs(a.r_diastolic) : -1;
@@ -419,27 +426,116 @@ export function getFullInsights(req, res) {
   mealInsights.sort((a, b) => b.dia_diff - a.dia_diff);
   const topMealInsights = mealInsights.slice(0, 10);
 
+  // ── Hydration high/low insight ────────────────────────────────
+  let hydrationInsight = null;
+  {
+    const { xs, dias } = buildPairs(hydrationMap);
+    if (xs.length >= 7) {
+      const sorted = [...xs].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 !== 0
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
+
+      const highDias = xs.map((x, i) => ({ x, dia: dias[i] })).filter(p => p.x >= median).map(p => p.dia);
+      const lowDias  = xs.map((x, i) => ({ x, dia: dias[i] })).filter(p => p.x <  median).map(p => p.dia);
+
+      hydrationInsight = {
+        paired_days: xs.length,
+        median_oz:   round2(median),
+        avg_dia_high: highDias.length > 0 ? round2(highDias.reduce((s, v) => s + v, 0) / highDias.length) : null,
+        avg_dia_low:  lowDias.length  > 0 ? round2(lowDias.reduce( (s, v) => s + v, 0) / lowDias.length)  : null,
+      };
+    }
+  }
+
+  // ── Supplement correlation ────────────────────────────────────
+  const activeSupplements = db.prepare(
+    `SELECT id, name FROM supplements WHERE active = 1 ORDER BY name`
+  ).all();
+  const takenStmt = db.prepare(
+    `SELECT date FROM supplement_logs WHERE supplement_id = ? AND taken = 1`
+  );
+  const supplementCorrelations = [];
+
+  for (const supp of activeSupplements) {
+    const takenDates = new Set(takenStmt.all(supp.id).map(r => r.date));
+
+    const takenPaired = [...takenDates].filter(d => {
+      const bp = bpNextMorning.get(d);
+      return bp && bp.diastolic != null && bp.systolic != null;
+    });
+    const daysTaken = takenPaired.length;
+
+    if (daysTaken < 7) {
+      supplementCorrelations.push({
+        supplement_id: supp.id,
+        name: supp.name,
+        days_taken: daysTaken,
+        below_threshold: true,
+      });
+      continue;
+    }
+
+    const notTakenPaired = [...bpNextMorning.keys()].filter(d => {
+      if (takenDates.has(d)) return false;
+      const bp = bpNextMorning.get(d);
+      return bp && bp.diastolic != null && bp.systolic != null;
+    });
+    const daysNotTaken = notTakenPaired.length;
+
+    const avgDiaTaken = takenPaired.reduce((s, d) => s + bpNextMorning.get(d).diastolic, 0) / daysTaken;
+    const avgSysTaken = takenPaired.reduce((s, d) => s + bpNextMorning.get(d).systolic,  0) / daysTaken;
+    const avgDiaNotTaken = daysNotTaken > 0
+      ? notTakenPaired.reduce((s, d) => s + bpNextMorning.get(d).diastolic, 0) / daysNotTaken
+      : null;
+    const avgSysNotTaken = daysNotTaken > 0
+      ? notTakenPaired.reduce((s, d) => s + bpNextMorning.get(d).systolic,  0) / daysNotTaken
+      : null;
+
+    supplementCorrelations.push({
+      supplement_id: supp.id,
+      name: supp.name,
+      avg_diastolic_taken:     round2(avgDiaTaken),
+      avg_systolic_taken:      round2(avgSysTaken),
+      avg_diastolic_not_taken: round2(avgDiaNotTaken),
+      avg_systolic_not_taken:  round2(avgSysNotTaken),
+      days_taken:    daysTaken,
+      days_not_taken: daysNotTaken,
+      difference: avgDiaNotTaken != null ? round2(avgDiaTaken - avgDiaNotTaken) : null,
+      below_threshold: false,
+    });
+  }
+
+  supplementCorrelations.sort((a, b) => {
+    if (a.below_threshold !== b.below_threshold) return a.below_threshold ? 1 : -1;
+    if (a.difference == null && b.difference == null) return 0;
+    if (a.difference == null) return 1;
+    if (b.difference == null) return -1;
+    return Math.abs(b.difference) - Math.abs(a.difference);
+  });
+
   // ── Coming soon: thresholds ───────────────────────────────────
-  const hydrationDays   = db.prepare(`SELECT COUNT(DISTINCT date) AS n FROM hydration_log WHERE water_oz > 0`).get().n;
-  const supplementDays  = db.prepare(`SELECT COUNT(DISTINCT date) AS n FROM supplement_logs WHERE taken = 1`).get().n;
+  const hydrationDays  = db.prepare(`SELECT COUNT(DISTINCT date) AS n FROM hydration_log WHERE water_oz > 0`).get().n;
 
   res.json({
     correlations,
     mealInsights: topMealInsights,
     scatterData: {
-      sodium:        buildScatter(sodiumMap),
-      potassium:     buildScatter(potassiumMap),
-      magnesium:     buildScatter(magnesiumMap),
-      nakRatio:      buildScatter(nakMap),
-      hrv:           buildScatter(hrvMap),
-      deepSleep:     buildScatter(deepMap),
-      readiness:     buildScatter(readinessMap),
+      sodium:         buildScatter(sodiumMap),
+      potassium:      buildScatter(potassiumMap),
+      magnesium:      buildScatter(magnesiumMap),
+      nakRatio:       buildScatter(nakMap),
+      hrv:            buildScatter(hrvMap),
+      deepSleep:      buildScatter(deepMap),
+      readiness:      buildScatter(readinessMap),
       activeCalories: buildScatter(activeCalMap),
-      activityScore: buildScatter(activityScoreMap),
+      activityScore:  buildScatter(activityScoreMap),
     },
+    hydrationInsight,
+    supplementCorrelations,
     thresholds: {
-      hydration_days:  hydrationDays,
-      supplement_days: supplementDays,
+      hydration_days: hydrationDays,
     },
   });
 }

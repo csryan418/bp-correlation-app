@@ -130,6 +130,7 @@
 
 .ins-dot--green { background: var(--green); }
 .ins-dot--amber { background: var(--amber); }
+.ins-dot--red   { background: var(--red); }
 .ins-dot--gray  { background: #9CA3AF; }
 
 .ins-traffic-legend {
@@ -243,6 +244,14 @@
   color: var(--text-muted);
   margin: 0;
   letter-spacing: 0.02em;
+}
+
+.ins-corr-insight {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0.375rem 0 0;
+  font-style: italic;
 }
 
 .ins-corr-no-data {
@@ -491,7 +500,128 @@
   letter-spacing: -0.01em;
 }
 
-/* ── Section 6: Coming soon ──────────────────────────────────── */
+/* ── Section 6: Supplement correlation ───────────────────────── */
+
+.ins-supp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.ins-supp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.125rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  transition: border-color 0.2s;
+}
+
+.ins-supp-card:hover {
+  border-color: var(--border-warm);
+}
+
+.ins-supp-card--dim {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.ins-supp-card--dim:hover {
+  border-color: var(--border-subtle);
+}
+
+.ins-supp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ins-supp-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.ins-supp-cols {
+  display: flex;
+  align-items: stretch;
+  margin: 0.125rem 0;
+}
+
+.ins-supp-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.ins-supp-divider {
+  width: 1px;
+  background: var(--border-subtle);
+  margin: 0.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.ins-supp-col-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
+.ins-supp-dia {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.ins-supp-sys {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+}
+
+.ins-supp-insight {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ins-supp-meta {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.ins-supp-progress-track {
+  height: 0.25rem;
+  background: var(--bg-elevated);
+  border-radius: 0.125rem;
+  overflow: hidden;
+}
+
+.ins-supp-progress-bar {
+  height: 100%;
+  border-radius: 0.125rem;
+  background: var(--accent);
+  transition: width 0.7s ease;
+}
+
+/* ── Section 7: Coming soon ──────────────────────────────────── */
 
 .ins-coming-grid {
   display: grid;
@@ -631,7 +761,8 @@
   .ins-scatter-grid-2,
   .ins-scatter-grid-2--half,
   .ins-scatter-grid-3,
-  .ins-coming-grid {
+  .ins-coming-grid,
+  .ins-supp-grid {
     grid-template-columns: 1fr;
     max-width: 100%;
   }

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(curl -s \"http://localhost:3001/api/food/portions/173944\")",
       "Bash(node -e ' *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npx vite *)"
     ]
   }
 }

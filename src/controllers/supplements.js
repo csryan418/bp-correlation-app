@@ -15,17 +15,88 @@ export function createSupplement(req, res) {
     return res.status(400).json({ error: 'name and dose are required' });
   }
   const db = getDb();
+  const trimmedName = name.trim();
+  const trimmedDose = dose.trim();
   const now = today();
+
+  const existing = db.prepare('SELECT * FROM supplements WHERE LOWER(name) = LOWER(?)').get(trimmedName);
+
+  if (existing) {
+    if (existing.active === 1) {
+      return res.status(409).json({ error: 'A supplement with this name already exists' });
+    }
+    // Reactivate inactive supplement with updated values
+    const doseChanged = trimmedDose !== existing.dose || unit !== existing.unit;
+    db.transaction(() => {
+      db.prepare('UPDATE supplements SET active = 1, dose = ?, unit = ?, time_of_day = ? WHERE id = ?')
+        .run(trimmedDose, unit, time_of_day, existing.id);
+      if (doseChanged) {
+        db.prepare('UPDATE supplement_dose_history SET effective_to = ? WHERE supplement_id = ? AND effective_to IS NULL')
+          .run(now, existing.id);
+        db.prepare('INSERT INTO supplement_dose_history (supplement_id, dose, unit, effective_from) VALUES (?, ?, ?, ?)')
+          .run(existing.id, trimmedDose, unit, now);
+      }
+    })();
+    return res.json(db.prepare('SELECT * FROM supplements WHERE id = ?').get(existing.id));
+  }
+
   const id = db.transaction(() => {
     const sup = db
       .prepare('INSERT INTO supplements (name, dose, unit, time_of_day) VALUES (?, ?, ?, ?)')
-      .run(name.trim(), dose.trim(), unit, time_of_day);
+      .run(trimmedName, trimmedDose, unit, time_of_day);
     db
       .prepare('INSERT INTO supplement_dose_history (supplement_id, dose, unit, effective_from) VALUES (?, ?, ?, ?)')
-      .run(sup.lastInsertRowid, dose.trim(), unit, now);
+      .run(sup.lastInsertRowid, trimmedDose, unit, now);
     return sup.lastInsertRowid;
   })();
   res.status(201).json(db.prepare('SELECT * FROM supplements WHERE id = ?').get(id));
+}
+
+export function deduplicateSupplements() {
+  const db = getDb();
+  const duplicateGroups = db.prepare(`
+    SELECT LOWER(name) AS lower_name, COUNT(*) AS cnt
+    FROM supplements
+    GROUP BY LOWER(name)
+    HAVING cnt > 1
+  `).all();
+
+  if (duplicateGroups.length === 0) return;
+
+  console.log(`[supplements] Found ${duplicateGroups.length} duplicate group(s), deduplicating...`);
+
+  // Prepare statements and collect merge plan BEFORE entering the transaction.
+  // better-sqlite3 silently rolls back transactions that throw, and calling
+  // .prepare() or .all() inside the callback can trigger that in some versions.
+  const getMembers = db.prepare(`
+    SELECT s.id, COUNT(sl.id) AS log_count
+    FROM supplements s
+    LEFT JOIN supplement_logs sl ON sl.supplement_id = s.id
+    WHERE LOWER(s.name) = ?
+    GROUP BY s.id
+    ORDER BY log_count DESC, s.id ASC
+  `);
+  const reassignLogs = db.prepare('UPDATE supplement_logs SET supplement_id = ? WHERE supplement_id = ?');
+  const deactivate = db.prepare('UPDATE supplements SET active = 0 WHERE id = ?');
+
+  const merges = [];
+  for (const group of duplicateGroups) {
+    const [canonical, ...duplicates] = getMembers.all(group.lower_name);
+    for (const dup of duplicates) {
+      merges.push({ canonicalId: canonical.id, dupId: dup.id });
+    }
+  }
+
+  console.log(`[supplements] Merging ${merges.length} duplicate record(s) into canonical counterpart(s)`);
+
+  db.transaction(() => {
+    for (const { canonicalId, dupId } of merges) {
+      reassignLogs.run(canonicalId, dupId);
+      deactivate.run(dupId);
+    }
+  })();
+
+  console.log(`[supplements] Deduplication complete — ${merges.length} record(s) merged`);
 }
 
 export function updateSupplement(req, res) {

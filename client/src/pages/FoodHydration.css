@@ -411,6 +411,11 @@
   margin-top: 0.875rem;
 }
 
+.fh-my-meals--editing {
+  overflow: visible;
+  max-height: none;
+}
+
 .fh-my-meals-list {
   list-style: none;
   margin: 0;
@@ -645,6 +650,10 @@
   overflow: hidden;
 }
 
+.fh-meal-edit-item--replacing {
+  overflow: visible;
+}
+
 .fh-meal-edit-item-row {
   display: flex;
   align-items: flex-start;
@@ -755,9 +764,21 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  position: relative;
 }
 
 .fh-item-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  max-height: 20rem;
+  overflow-y: auto;
   margin-bottom: 0;
 }
 

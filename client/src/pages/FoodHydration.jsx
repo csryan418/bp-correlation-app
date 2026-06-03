@@ -481,7 +481,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
   function updateBasketQty(key, val) {
     setBasket(prev => prev.map(item =>
-      item.key === key ? { ...item, quantity: Math.max(0.25, parseFloat(val) || 1) } : item
+      item.key === key ? { ...item, quantity: val } : item
     ))
   }
 
@@ -695,8 +695,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   function updateEditItemQty(key, val) {
-    const qty = Math.max(0.25, parseFloat(val) || 0.25)
-    setEditingItems(prev => prev.map(i => i._key === key ? { ...i, serving_size: qty } : i))
+    setEditingItems(prev => prev.map(i => i._key === key ? { ...i, serving_size: val } : i))
   }
 
   function removeEditItem(key) {
@@ -804,11 +803,11 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const basketMagnesium = basket.reduce((s, i) => s + (i.magnesiumPerUnit != null ? Math.round(i.magnesiumPerUnit * i.quantity) : 0), 0)
 
   function handleEditManualQtyChange(val) {
-    const q = Math.max(0.25, parseFloat(val) || 0.25)
-    setEditQuantity(q)
-    if (editSodiumBase    != null) setEditSodium(String(Math.round(editSodiumBase    * q)))
-    if (editPotassiumBase != null) setEditPotassium(String(Math.round(editPotassiumBase * q)))
-    if (editMagnesiumBase != null) setEditMagnesium(String(Math.round(editMagnesiumBase * q)))
+    setEditQuantity(val)
+    const q = parseFloat(val) || 0
+    if (editSodiumBase    != null) setEditSodium(q > 0 ? String(Math.round(editSodiumBase    * q)) : '')
+    if (editPotassiumBase != null) setEditPotassium(q > 0 ? String(Math.round(editPotassiumBase * q)) : '')
+    if (editMagnesiumBase != null) setEditMagnesium(q > 0 ? String(Math.round(editMagnesiumBase * q)) : '')
   }
 
   const editProps = {
@@ -997,8 +996,10 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                               ) : (
                                 <>
                                   <input id={`qty-${item.fdcId}`} className="text-input text-input--narrow"
-                                    type="number" min="0.25" step="0.25" value={confirmQuantity}
-                                    onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
+                                    type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" value={confirmQuantity}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => setConfirmQuantity(e.target.value)}
+                                    onBlur={e => { const v = parseFloat(e.target.value); setConfirmQuantity(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }} />
                                   <select className="fs-portion-select" value={confirmPortionIdx}
                                     onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
                                     {confirmPortions.map((p, i) => {
@@ -1061,9 +1062,11 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                         <span className="fh-basket-item-portion">{item.portionLabel}</span>
                         <input
                           className="text-input text-input--narrow fh-basket-qty"
-                          type="number" min="0.25" step="0.25"
+                          type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                           value={item.quantity}
+                          onFocus={e => e.target.select()}
                           onChange={e => updateBasketQty(item.key, e.target.value)}
+                          onBlur={e => { const v = parseFloat(e.target.value); updateBasketQty(item.key, isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }}
                         />
                         <button className="fh-basket-remove"
                           onClick={() => removeFromBasket(item.key)} aria-label="Remove">×</button>
@@ -1226,7 +1229,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
             </div>
           </div>
 
-          <div className={`fh-my-meals${mealsExpanded ? ' fh-my-meals--open' : ''}`}>
+          <div className={`fh-my-meals${mealsExpanded ? ' fh-my-meals--open' : ''}${editingMealId ? ' fh-my-meals--editing' : ''}`}>
             {savedMeals.length === 0 ? (
               <p className="fs-log-empty">No saved meals yet — create one to log it quickly later</p>
             ) : (
@@ -1272,16 +1275,18 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                       {isEditing ? (
                         <div className="fh-meal-edit-section">
                           {editingItems.map(item => (
-                            <div key={item._key} className="fh-meal-edit-item">
+                            <div key={item._key} className={`fh-meal-edit-item${replacingItemKey === item._key ? ' fh-meal-edit-item--replacing' : ''}`}>
                               <div className="fh-meal-edit-item-row">
                                 <div className="fh-meal-edit-item-info">
                                   <span className="fh-meal-edit-item-name">{item.food_name}</span>
                                   <div className="fh-meal-edit-serving-row">
                                     <input
                                       className="text-input text-input--narrow fh-meal-edit-qty"
-                                      type="number" min="0.25" step="0.25"
+                                      type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                                       value={item.serving_size}
+                                      onFocus={e => e.target.select()}
                                       onChange={e => updateEditItemQty(item._key, e.target.value)}
+                                      onBlur={e => { const v = parseFloat(e.target.value); updateEditItemQty(item._key, isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }}
                                     />
                                     <span className="fh-meal-edit-unit">{item.serving_unit}</span>
                                   </div>
@@ -1656,8 +1661,10 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
                             ) : (
                               <>
                                 <input id={`cmqty-${item.fdcId}`} className="text-input text-input--narrow"
-                                  type="number" min="0.25" step="0.25" value={confirmQuantity}
-                                  onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
+                                  type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" value={confirmQuantity}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => setConfirmQuantity(e.target.value)}
+                                  onBlur={e => { const v = parseFloat(e.target.value); setConfirmQuantity(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }} />
                                 <select className="fs-portion-select" value={confirmPortionIdx}
                                   onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
                                   {confirmPortions.map((p, i) => {
@@ -1961,8 +1968,10 @@ function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }
                           ) : (
                             <>
                               <input id={`misp-${item.fdcId}`} className="text-input text-input--narrow"
-                                type="number" min="0.25" step="0.25" value={confirmQuantity}
-                                onChange={e => setConfirmQuantity(Math.max(0.25, parseFloat(e.target.value) || 1))} />
+                                type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" value={confirmQuantity}
+                                onFocus={e => e.target.select()}
+                                onChange={e => setConfirmQuantity(e.target.value)}
+                                onBlur={e => { const v = parseFloat(e.target.value); setConfirmQuantity(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }} />
                               <select className="fs-portion-select" value={confirmPortionIdx}
                                 onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
                                 {confirmPortions.map((p, i) => {
@@ -2056,9 +2065,11 @@ function LogEntry({
             <>
               <div className="fs-servings-row">
                 <label className="fs-servings-label">Quantity</label>
-                <input className="text-input text-input--narrow" type="number" min="0.25" step="0.25"
+                <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                   value={editQuantity}
-                  onChange={e => onEditManualQtyChange(e.target.value)} />
+                  onFocus={e => e.target.select()}
+                  onChange={e => onEditManualQtyChange(e.target.value)}
+                  onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
                 <select className="fs-portion-select" value={editPortionIdx}
                   onChange={e => setEditPortionIdx(parseInt(e.target.value))}>
                   {editPortions.map((p, i) => {
@@ -2083,9 +2094,11 @@ function LogEntry({
             <>
               <div className="fs-servings-row">
                 <label className="fs-servings-label">Quantity</label>
-                <input className="text-input text-input--narrow" type="number" min="0.25" step="0.25"
+                <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                   value={editQuantity}
-                  onChange={e => onEditManualQtyChange(e.target.value)} />
+                  onFocus={e => e.target.select()}
+                  onChange={e => onEditManualQtyChange(e.target.value)}
+                  onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
               </div>
               <div className="fs-computed">
                 <ComputedMineral label="Sodium"    value={parseFloat(editSodium)    || null} />

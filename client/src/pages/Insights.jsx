@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import './Insights.css'
 
@@ -255,7 +255,7 @@ function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
 
 // ── CorrelationCard ───────────────────────────────────────────
 
-function CorrelationCard({ corr }) {
+function CorrelationCard({ corr, insightText }) {
   const { variable, unit, r_diastolic, r_systolic, n } = corr
   const MIN_DAYS = 7
   const hasData = n >= MIN_DAYS && r_diastolic != null
@@ -310,6 +310,7 @@ function CorrelationCard({ corr }) {
 
           <p className="ins-corr-direction">{direction}</p>
           <p className="ins-corr-n">{n} paired days</p>
+          {insightText && <p className="ins-corr-insight">{insightText}</p>}
         </>
       ) : (
         <p className="ins-corr-no-data">
@@ -393,6 +394,92 @@ function DataSummary({ correlations }) {
   )
 }
 
+// ── Error boundary ───────────────────────────────────────────
+
+class InsightsErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[InsightsErrorBoundary] render error:', error.message, info.componentStack)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="ins-error-card">
+          Render error: {this.state.error.message}
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ── SupplementCorrelationCard ─────────────────────────────────
+
+function SupplementCorrelationCard({ supp }) {
+  if (!supp) return null
+
+  if (supp.below_threshold) {
+    const pct = Math.min(((supp.days_taken ?? 0) / 7) * 100, 100)
+    return (
+      <div className="ins-supp-card ins-supp-card--dim">
+        <div className="ins-supp-name">{supp.name}</div>
+        <div className="ins-supp-progress-track">
+          <div className="ins-supp-progress-bar" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="ins-supp-meta">{supp.days_taken ?? 0}/7 days logged</p>
+      </div>
+    )
+  }
+
+  const diff = supp.difference ?? null
+  let insight, dotClass
+  if (diff !== null && diff <= -3) {
+    insight = `Taking ${supp.name} is associated with lower next-morning diastolic (${Math.abs(Math.round(diff))} mmHg lower)`
+    dotClass = 'ins-dot--green'
+  } else if (diff !== null && diff >= 3) {
+    insight = `Taking ${supp.name} is associated with higher next-morning diastolic (${Math.round(diff)} mmHg higher)`
+    dotClass = 'ins-dot--red'
+  } else {
+    insight = `No meaningful difference in next-morning diastolic on days you take ${supp.name}`
+    dotClass = 'ins-dot--gray'
+  }
+
+  const diaTaken = supp.avg_diastolic_taken != null ? Math.round(supp.avg_diastolic_taken) : '—'
+  const sysTaken = supp.avg_systolic_taken  != null ? Math.round(supp.avg_systolic_taken)  : '—'
+  const diaOff   = supp.avg_diastolic_not_taken != null ? Math.round(supp.avg_diastolic_not_taken) : '—'
+  const sysOff   = supp.avg_systolic_not_taken  != null ? `${Math.round(supp.avg_systolic_not_taken)} sys` : '—'
+
+  return (
+    <div className="ins-supp-card">
+      <div className="ins-supp-header">
+        <div className="ins-supp-name">{supp.name}</div>
+        <span className={`ins-traffic-dot ${dotClass}`} />
+      </div>
+      <div className="ins-supp-cols">
+        <div className="ins-supp-col">
+          <span className="ins-supp-col-label">Days taken</span>
+          <span className="ins-supp-dia">{diaTaken}</span>
+          <span className="ins-supp-sys">{sysTaken !== '—' ? `${sysTaken} sys` : '—'}</span>
+        </div>
+        <div className="ins-supp-divider" />
+        <div className="ins-supp-col">
+          <span className="ins-supp-col-label">Days not taken</span>
+          <span className="ins-supp-dia">{diaOff}</span>
+          <span className="ins-supp-sys">{sysOff}</span>
+        </div>
+      </div>
+      <p className="ins-supp-insight">{insight}</p>
+      <p className="ins-supp-meta">{supp.days_taken} days taken</p>
+    </div>
+  )
+}
+
 // ── ComingSoonCard ────────────────────────────────────────────
 
 function ComingSoonCard({ title, desc, current, threshold = 7 }) {
@@ -418,18 +505,30 @@ export default function Insights() {
 
   useEffect(() => {
     api.insightsFull()
-      .then(data => setState({ loading: false, error: null, data }))
-      .catch(err => setState({ loading: false, error: err.message, data: null }))
+      .then(data => {
+        setState({ loading: false, error: null, data })
+      })
+      .catch(err => setState({ loading: false, error: err?.message || 'Failed to load insights', data: null }))
   }, [])
 
   const { loading, error, data } = state
 
   if (loading) return <InsightsLoading />
   if (error)   return <InsightsError message={error} />
+  if (!data)   return <InsightsError message="No data received" />
 
-  const { correlations, mealInsights, scatterData, thresholds } = data
+  const {
+    correlations,
+    mealInsights,
+    scatterData,
+    thresholds,
+    hydrationInsight,
+    supplementCorrelations,
+  } = data
+  const suppList = Array.isArray(supplementCorrelations) ? supplementCorrelations : []
 
   return (
+    <InsightsErrorBoundary>
     <div className="ins-page">
       <header className="page-header ins-page-header">
         <div>
@@ -465,6 +564,7 @@ export default function Insights() {
             'activity score', 'active calories', 'steps', 'step count',
             'daily sodium', 'daily potassium', 'daily magnesium',
             'sodium:potassium ratio', 'hydration', 'daily hydration',
+            'daily water intake',
           ])
           const OBSERVABLE = new Set([
             'hrv average', 'readiness score', 'deep sleep', 'total sleep',
@@ -480,7 +580,14 @@ export default function Insights() {
                   <h3 className="ins-corr-group-title">Things You Can Change</h3>
                   <p className="ins-corr-group-sub">Variables you can directly influence</p>
                   <div className="ins-corr-grid">
-                    {actionable.map(corr => <CorrelationCard key={corr.variable} corr={corr} />)}
+                    {actionable.map(corr => {
+                      let insightText = null
+                      if (corr.variable === 'Daily Water Intake' && hydrationInsight) {
+                        const { median_oz, avg_dia_high, avg_dia_low } = hydrationInsight
+                        insightText = `On high hydration days (above ${Math.round(median_oz)}oz), your next-morning diastolic averaged ${Math.round(avg_dia_high)} mmHg vs ${Math.round(avg_dia_low)} mmHg on lower hydration days`
+                      }
+                      return <CorrelationCard key={corr.variable} corr={corr} insightText={insightText} />
+                    })}
                   </div>
                 </div>
               )}
@@ -619,28 +726,40 @@ export default function Insights() {
         </div>
       </section>
 
-      {/* ── Section 6: Coming Soon ── */}
-      <section className="ins-section">
-        <h2 className="ins-section-title">Coming Soon</h2>
-        <p className="ins-section-sub">
-          More correlations unlock as you log more data.
-        </p>
-        <div className="ins-coming-grid">
-          <ComingSoonCard
-            title="Hydration vs BP"
-            desc="Daily water intake correlation with next-morning diastolic. Log water daily to unlock."
-            current={thresholds.hydration_days}
-            threshold={7}
-          />
-          <ComingSoonCard
-            title="Supplement Correlation"
-            desc="Which supplements correlate with lower next-morning BP. Mark supplements as taken daily to unlock."
-            current={thresholds.supplement_days}
-            threshold={7}
-          />
-        </div>
-      </section>
+      {/* ── Section 6: Supplements vs BP ── */}
+      {suppList.length > 0 && (
+        <section className="ins-section">
+          <h2 className="ins-section-title">Supplements vs Next-Morning BP</h2>
+          <p className="ins-section-sub">
+            Days you took each supplement vs days you didn't — effect on next-morning diastolic.
+          </p>
+          <div className="ins-supp-grid">
+            {suppList.map(supp => (
+              <SupplementCorrelationCard key={supp.supplement_id ?? supp.name} supp={supp} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Section 7: Coming Soon ── */}
+      {!hydrationInsight && (
+        <section className="ins-section">
+          <h2 className="ins-section-title">Coming Soon</h2>
+          <p className="ins-section-sub">
+            More correlations unlock as you log more data.
+          </p>
+          <div className="ins-coming-grid">
+            <ComingSoonCard
+              title="Hydration vs BP"
+              desc="Daily water intake correlation with next-morning diastolic. Log water daily to unlock."
+              current={thresholds?.hydration_days ?? 0}
+              threshold={7}
+            />
+          </div>
+        </section>
+      )}
     </div>
+    </InsightsErrorBoundary>
   )
 }
 
