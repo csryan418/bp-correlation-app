@@ -1,0 +1,186 @@
+.ci-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.ci-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  width: 100%;
+  max-width: 480px;
+  position: relative;
+  box-shadow: var(--shadow-card);
+}
+
+.ci-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+.ci-close:hover { color: var(--text-primary); }
+
+.ci-header {
+  margin-bottom: 1.75rem;
+}
+
+.ci-title {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+}
+
+.ci-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.ci-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.ci-question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ci-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Toggle buttons (Yes/No/Skip) */
+.ci-toggle-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ci-toggle {
+  flex: 1;
+  padding: 0.5rem 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ci-toggle:hover {
+  border-color: var(--border-warm);
+  color: var(--text-primary);
+}
+.ci-toggle--active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 1–10 scale */
+.ci-scale-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ci-scale {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.ci-scale-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ci-scale-btn {
+  flex: 1;
+  padding: 0.45rem 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.ci-scale-btn:hover {
+  border-color: var(--border-warm);
+  color: var(--text-primary);
+}
+.ci-scale-btn--active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ci-skip-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  align-self: flex-start;
+  transition: color 0.15s;
+}
+.ci-skip-link:hover,
+.ci-skip-link--active { color: var(--text-secondary); }
+
+/* Submit */
+.ci-submit {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ci-submit:hover { background: var(--accent-hover); }
+
+/* Done state */
+.ci-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem 0;
+  color: var(--green);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ci-done-icon {
+  font-size: 2rem;
+}

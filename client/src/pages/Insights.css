@@ -1,0 +1,644 @@
+/* ── Page layout ─────────────────────────────────────────────── */
+
+.ins-page {
+  padding: 2.75rem 3rem;
+  width: 100%;
+}
+
+.ins-page-header {
+  margin-bottom: 2.5rem;
+}
+
+/* ── Sections ────────────────────────────────────────────────── */
+
+.ins-section {
+  margin-bottom: 3rem;
+}
+
+.ins-section-title {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.ins-section-sub {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0 0 1.25rem;
+  font-weight: 300;
+  letter-spacing: 0.015em;
+}
+
+/* ── Summary card ────────────────────────────────────────────── */
+
+.ins-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-md);
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 2.5rem;
+  box-shadow: var(--shadow-card);
+}
+
+.ins-summary-heading {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  margin: 0 0 0.875rem;
+}
+
+.ins-summary-list {
+  margin: 0;
+  padding-left: 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  list-style: disc;
+}
+
+.ins-summary-list li {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.ins-summary-empty {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ── Section 1: Correlation cards ────────────────────────────── */
+
+.ins-corr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 1rem;
+}
+
+.ins-corr-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.125rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s;
+}
+
+.ins-corr-card:hover {
+  border-color: var(--border-warm);
+}
+
+.ins-corr-card--dim {
+  opacity: 0.65;
+}
+
+.ins-corr-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ins-corr-var {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+}
+
+.ins-traffic-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.ins-dot--green { background: var(--green); }
+.ins-dot--amber { background: var(--amber); }
+.ins-dot--gray  { background: #9CA3AF; }
+
+.ins-traffic-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 1.375rem;
+}
+
+.ins-traffic-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.ins-corr-group {
+  margin-bottom: 1.75rem;
+}
+
+.ins-corr-group:last-child {
+  margin-bottom: 0;
+}
+
+.ins-corr-group-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+  margin: 0 0 0.2rem;
+}
+
+.ins-corr-group-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 300;
+  letter-spacing: 0.015em;
+  margin: 0 0 0.875rem;
+}
+
+.ins-corr-r-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.ins-r-badge {
+  font-size: 0.8125rem;
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.ins-r-badge--lg {
+  font-size: 1rem;
+  padding: 0.25rem 0.625rem;
+}
+
+.ins-r--strong {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.ins-r--moderate {
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.ins-r--weak {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.ins-r--none {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.ins-corr-sys-r {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+}
+
+.ins-corr-bar-track {
+  height: 0.25rem;
+  background: var(--bg-elevated);
+  border-radius: 0.125rem;
+  overflow: hidden;
+}
+
+.ins-corr-bar {
+  height: 100%;
+  border-radius: 0.125rem;
+  transition: width 0.7s ease;
+}
+
+.ins-corr-direction {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.ins-corr-n {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.ins-corr-no-data {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Section 2: Meal insights ────────────────────────────────── */
+
+.ins-meal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.ins-meal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.125rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  transition: border-color 0.2s;
+}
+
+.ins-meal-card:hover {
+  border-color: var(--border-warm);
+}
+
+.ins-meal-food {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.ins-meal-compare {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ins-meal-reading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  flex: 1;
+}
+
+.ins-meal-reading-val {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.ins-meal-reading--high .ins-meal-reading-val {
+  color: var(--red);
+}
+
+.ins-meal-reading--low .ins-meal-reading-val {
+  color: var(--green);
+}
+
+.ins-meal-reading-label {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.ins-meal-vs {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ins-meal-detail {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ins-meal-sys {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Sections 3-5: Scatter chart grids ──────────────────────── */
+
+.ins-scatter-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.125rem;
+}
+
+.ins-scatter-grid-2--half {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 66%;
+}
+
+.ins-scatter-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.125rem;
+}
+
+/* ── Scatter chart card ──────────────────────────────────────── */
+
+.ins-chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.125rem 1.25rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.2s;
+}
+
+.ins-chart-card:hover {
+  border-color: var(--border-warm);
+}
+
+.ins-chart-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ins-chart-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  margin: 0 0 0.25rem;
+}
+
+.ins-chart-meta {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.ins-chart-r-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.ins-r-secondary {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+}
+
+/* ── Scatter SVG ─────────────────────────────────────────────── */
+
+.ins-scatter-wrap {
+  position: relative;
+  cursor: crosshair;
+}
+
+.ins-scatter-svg {
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+  display: block;
+}
+
+.ins-chart-tick {
+  font-size: 0.5rem;
+  fill: var(--text-muted);
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.ins-scatter-empty {
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 0 1rem;
+}
+
+/* ── Scatter tooltip ─────────────────────────────────────────── */
+
+.ins-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 9rem;
+  box-shadow: var(--shadow-card);
+  z-index: 10;
+}
+
+.ins-tooltip-date {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.ins-tooltip-x {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.ins-tooltip-dia {
+  font-size: 0.9rem;
+  font-family: var(--font-heading);
+  color: var(--accent);
+  letter-spacing: -0.01em;
+}
+
+.ins-tooltip-sys {
+  font-size: 0.75rem;
+  font-family: var(--font-heading);
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
+
+/* ── Section 6: Coming soon ──────────────────────────────────── */
+
+.ins-coming-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.125rem;
+  max-width: 66%;
+}
+
+.ins-coming-card {
+  background: var(--bg-card);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  opacity: 0.65;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ins-coming-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+}
+
+.ins-coming-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.ins-coming-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ins-coming-progress-track {
+  height: 0.25rem;
+  background: var(--bg-elevated);
+  border-radius: 0.125rem;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.ins-coming-progress-bar {
+  height: 100%;
+  border-radius: 0.125rem;
+  background: var(--accent);
+  transition: width 0.7s ease;
+}
+
+.ins-coming-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+/* ── Empty / error states ────────────────────────────────────── */
+
+.ins-empty-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ins-error-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  font-size: 0.875rem;
+  color: var(--red);
+}
+
+/* ── Loading skeletons ───────────────────────────────────────── */
+
+.loading-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-surface) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.ins-skeleton-title {
+  height: 1.75rem;
+  width: 12rem;
+  margin-bottom: 1.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.ins-skeleton-card {
+  height: 10rem;
+  border-radius: var(--radius-md);
+}
+
+.ins-skeleton-chart {
+  height: 14rem;
+  border-radius: var(--radius-md);
+}
+
+/* ── Mobile ──────────────────────────────────────────────────── */
+
+@media (max-width: 899px) {
+  .ins-page {
+    padding: 1.25rem 1rem;
+  }
+
+  .ins-corr-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ins-meal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ins-scatter-grid-2,
+  .ins-scatter-grid-2--half,
+  .ins-scatter-grid-3,
+  .ins-coming-grid {
+    grid-template-columns: 1fr;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .ins-corr-grid {
+    grid-template-columns: 1fr;
+  }
+}

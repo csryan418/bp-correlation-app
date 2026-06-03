@@ -141,6 +141,21 @@ export function getYesterdaySleep(req, res) {
   res.json(row ?? null)
 }
 
+export function getYesterdayActivity(req, res) {
+  const db = getDb()
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const yesterday = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
+  const row = db
+    .prepare('SELECT * FROM oura_activity WHERE date = ?')
+    .get(yesterday)
+  res.json(row ?? null)
+}
+
 export async function syncOura(req, res) {
   try {
     const result = await runOuraSync();

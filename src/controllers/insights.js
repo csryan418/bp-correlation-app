@@ -263,6 +263,187 @@ function getSupplementStreakInsights(db) {
   return insights;
 }
 
+export function getFullInsights(req, res) {
+  const db = getDb();
+
+  // Pearson r with 7-pair minimum threshold
+  function pearson7(xs, ys) {
+    const n = xs.length;
+    if (n < 7) return null;
+    const meanX = xs.reduce((s, v) => s + v, 0) / n;
+    const meanY = ys.reduce((s, v) => s + v, 0) / n;
+    let num = 0, varX = 0, varY = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = xs[i] - meanX, dy = ys[i] - meanY;
+      num += dx * dy; varX += dx * dx; varY += dy * dy;
+    }
+    const denom = Math.sqrt(varX * varY);
+    return denom === 0 ? null : num / denom;
+  }
+
+  function round2(v) { return v != null ? Math.round(v * 100) / 100 : null; }
+
+  // Build next-morning BP map: key = variable_date (bp.date - 1), value = {diastolic, systolic}
+  const morningBP = db.prepare(`
+    SELECT date, systolic, diastolic FROM blood_pressure WHERE time_of_day = 'morning'
+  `).all();
+  const bpNextMorning = new Map();
+  for (const row of morningBP) {
+    const d = new Date(row.date + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    const varDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    bpNextMorning.set(varDate, { diastolic: row.diastolic, systolic: row.systolic });
+  }
+
+  // Build paired lists [xs, dias, syss, dates] from a variable map
+  function buildPairs(varMap) {
+    const xs = [], dias = [], syss = [], dates = [];
+    for (const [date, x] of varMap) {
+      const bp = bpNextMorning.get(date);
+      if (bp && bp.diastolic != null && bp.systolic != null && x != null) {
+        xs.push(x); dias.push(bp.diastolic); syss.push(bp.systolic); dates.push(date);
+      }
+    }
+    return { xs, dias, syss, dates };
+  }
+
+  function calcCorr(varMap, name, unit) {
+    const { xs, dias, syss } = buildPairs(varMap);
+    const n = xs.length;
+    return {
+      variable: name,
+      unit,
+      r_diastolic: round2(pearson7(xs, dias)),
+      r_systolic: round2(pearson7(xs, syss)),
+      n,
+    };
+  }
+
+  function buildScatter(varMap) {
+    const { xs, dias, syss, dates } = buildPairs(varMap);
+    return xs.map((x, i) => ({ x, dia: dias[i], sys: syss[i], date: dates[i] }));
+  }
+
+  // ── Sleep ────────────────────────────────────────────────────
+  const sleepRows = db.prepare(`
+    SELECT date, hrv_average, deep_sleep_minutes, total_sleep_minutes, readiness_score FROM oura_sleep
+  `).all();
+  const hrvMap        = new Map(sleepRows.filter(r => r.hrv_average        != null).map(r => [r.date, r.hrv_average]));
+  const deepMap       = new Map(sleepRows.filter(r => r.deep_sleep_minutes != null).map(r => [r.date, r.deep_sleep_minutes]));
+  const totalSleepMap = new Map(sleepRows.filter(r => r.total_sleep_minutes != null).map(r => [r.date, r.total_sleep_minutes]));
+  const readinessMap  = new Map(sleepRows.filter(r => r.readiness_score    != null).map(r => [r.date, r.readiness_score]));
+
+  // ── Activity ─────────────────────────────────────────────────
+  const actRows = db.prepare(`
+    SELECT date, active_calories, steps, activity_score FROM oura_activity
+  `).all();
+  const activeCalMap     = new Map(actRows.filter(r => r.active_calories != null).map(r => [r.date, r.active_calories]));
+  const stepsMap         = new Map(actRows.filter(r => r.steps           != null).map(r => [r.date, r.steps]));
+  const activityScoreMap = new Map(actRows.filter(r => r.activity_score  != null).map(r => [r.date, r.activity_score]));
+
+  // ── Minerals ─────────────────────────────────────────────────
+  const foodDailyRows = db.prepare(`
+    SELECT date,
+      SUM(COALESCE(sodium_mg, 0))    AS total_sodium,
+      SUM(COALESCE(potassium_mg, 0)) AS total_potassium,
+      SUM(COALESCE(magnesium_mg, 0)) AS total_magnesium
+    FROM food_log GROUP BY date
+  `).all();
+  const sodiumMap    = new Map(foodDailyRows.map(r => [r.date, r.total_sodium]));
+  const potassiumMap = new Map(foodDailyRows.map(r => [r.date, r.total_potassium]));
+  const magnesiumMap = new Map(foodDailyRows.map(r => [r.date, r.total_magnesium]));
+  const nakMap       = new Map(
+    foodDailyRows
+      .filter(r => r.total_potassium > 0)
+      .map(r => [r.date, r.total_sodium / r.total_potassium])
+  );
+
+  // ── Correlations ─────────────────────────────────────────────
+  const correlations = [
+    calcCorr(hrvMap,        'HRV Average',              'ms'),
+    calcCorr(deepMap,       'Deep Sleep',               'min'),
+    calcCorr(totalSleepMap, 'Total Sleep',              'min'),
+    calcCorr(readinessMap,  'Readiness Score',          ''),
+    calcCorr(activeCalMap,  'Active Calories',          'kcal'),
+    calcCorr(stepsMap,      'Steps',                    ''),
+    calcCorr(activityScoreMap, 'Activity Score',        ''),
+    calcCorr(sodiumMap,     'Daily Sodium',             'mg'),
+    calcCorr(potassiumMap,  'Daily Potassium',          'mg'),
+    calcCorr(magnesiumMap,  'Daily Magnesium',          'mg'),
+    calcCorr(nakMap,        'Sodium:Potassium Ratio',   ':1'),
+  ];
+  correlations.sort((a, b) => {
+    const absA = a.r_diastolic != null ? Math.abs(a.r_diastolic) : -1;
+    const absB = b.r_diastolic != null ? Math.abs(b.r_diastolic) : -1;
+    return absB - absA;
+  });
+
+  // ── Meal-level insights ──────────────────────────────────────
+  const foodDateRows = db.prepare(`
+    SELECT food_name, date FROM food_log GROUP BY food_name, date ORDER BY food_name
+  `).all();
+  const foodDateMap = new Map();
+  for (const { food_name, date } of foodDateRows) {
+    if (!foodDateMap.has(food_name)) foodDateMap.set(food_name, new Set());
+    foodDateMap.get(food_name).add(date);
+  }
+
+  const allVarDates = new Set(bpNextMorning.keys());
+  const mealInsights = [];
+
+  for (const [food, datesSet] of foodDateMap) {
+    if (datesSet.size < 3) continue;
+    const onDays  = [...datesSet].filter(d => allVarDates.has(d));
+    if (onDays.length < 3) continue;
+    const offDays = [...allVarDates].filter(d => !datesSet.has(d) && bpNextMorning.get(d)?.diastolic != null);
+    if (offDays.length === 0) continue;
+
+    const avgDiaOn  = onDays.reduce( (s, d) => s + bpNextMorning.get(d).diastolic, 0) / onDays.length;
+    const avgDiaOff = offDays.reduce((s, d) => s + bpNextMorning.get(d).diastolic, 0) / offDays.length;
+    const avgSysOn  = onDays.reduce( (s, d) => s + bpNextMorning.get(d).systolic,  0) / onDays.length;
+    const avgSysOff = offDays.reduce((s, d) => s + bpNextMorning.get(d).systolic,  0) / offDays.length;
+    const diaDiff   = Math.abs(avgDiaOn - avgDiaOff);
+    if (diaDiff < 3) continue;
+
+    mealInsights.push({
+      food,
+      avg_dia_on:  round2(avgDiaOn),
+      avg_dia_off: round2(avgDiaOff),
+      avg_sys_on:  round2(avgSysOn),
+      avg_sys_off: round2(avgSysOff),
+      n_on:  onDays.length,
+      n_off: offDays.length,
+      dia_diff: round2(diaDiff),
+    });
+  }
+  mealInsights.sort((a, b) => b.dia_diff - a.dia_diff);
+  const topMealInsights = mealInsights.slice(0, 10);
+
+  // ── Coming soon: thresholds ───────────────────────────────────
+  const hydrationDays   = db.prepare(`SELECT COUNT(DISTINCT date) AS n FROM hydration_log WHERE water_oz > 0`).get().n;
+  const supplementDays  = db.prepare(`SELECT COUNT(DISTINCT date) AS n FROM supplement_logs WHERE taken = 1`).get().n;
+
+  res.json({
+    correlations,
+    mealInsights: topMealInsights,
+    scatterData: {
+      sodium:        buildScatter(sodiumMap),
+      potassium:     buildScatter(potassiumMap),
+      magnesium:     buildScatter(magnesiumMap),
+      nakRatio:      buildScatter(nakMap),
+      hrv:           buildScatter(hrvMap),
+      deepSleep:     buildScatter(deepMap),
+      readiness:     buildScatter(readinessMap),
+      activeCalories: buildScatter(activeCalMap),
+      activityScore: buildScatter(activityScoreMap),
+    },
+    thresholds: {
+      hydration_days:  hydrationDays,
+      supplement_days: supplementDays,
+    },
+  });
+}
+
 // Returns an array of { start, end, length } for each consecutive daily streak in a sorted date array.
 function findStreaks(sortedDates) {
   if (sortedDates.length === 0) return [];

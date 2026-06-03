@@ -24,10 +24,10 @@
   letter-spacing: 0.02em;
 }
 
-/* Three equal columns, no max-width cap */
+/* 2x2 grid: four equal-width cards, then full-width chart */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.125rem;
   align-items: stretch;
 }
@@ -261,7 +261,7 @@
 
 .recovery-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   flex: 1;
   align-content: center;
@@ -321,6 +321,16 @@
   font-family: var(--font-heading);
   line-height: 1;
   margin-bottom: 0.5rem;
+}
+
+/* ── Activity ── */
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  flex: 1;
+  align-content: center;
+  overflow: hidden;
 }
 
 /* ── BP trend card header ── */

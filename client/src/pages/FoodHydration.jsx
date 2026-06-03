@@ -137,6 +137,11 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [manualDate, setManualDate] = useState(today)
   const [manualLogging, setManualLogging] = useState(false)
 
+  // Copy to today
+  const [copyConfirmMeal, setCopyConfirmMeal] = useState(null)
+  const [copySuccessMeal, setCopySuccessMeal] = useState(null)
+  const copySuccessRef = useRef(null)
+
   // Saved meals
   const [savedMeals, setSavedMeals] = useState([])
   const [showCreateMeal, setShowCreateMeal] = useState(false)
@@ -160,12 +165,22 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const toastRef = useRef(null)
   const searchGenRef = useRef(0)
 
+  // Voice recognition
+  const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+  const [voiceState, setVoiceState] = useState('idle')
+  const [voiceError, setVoiceError] = useState(null)
+  const [voiceUnmatched, setVoiceUnmatched] = useState([])
+  const [voiceConfirmQueue, setVoiceConfirmQueue] = useState([])
+
   useEffect(() => { fetchSavedMeals() }, [])
   useEffect(() => {
     fetchLog(selectedDate)
     setEditingId(null)
     setShowManual(false)
     setConfirmingItem(null)
+    setVoiceConfirmQueue([])
+    setVoiceError(null)
+    setVoiceUnmatched([])
     setQuery('')
     setResults([])
     setSearchError(null)
@@ -247,19 +262,171 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   function handleConfirmCancel() {
+    const wasVoice = voiceConfirmQueue.length > 0
+    setVoiceConfirmQueue([])
     setConfirmingItem(null)
     setConfirmPortions([])
     setConfirmBasePer100g(null)
     setConfirmPortionsFailed(false)
     setConfirmQuantity(1)
     setConfirmIsBeverage(false)
+    if (wasVoice) {
+      setResults([])
+      setQuery('')
+    }
   }
 
   function clearQuery() {
+    setVoiceConfirmQueue([])
     setQuery('')
     setResults([])
     setSearchError(null)
     setConfirmingItem(null)
+  }
+
+  function handleVoiceClick() {
+    if (voiceState !== 'idle') return
+    setVoiceError(null)
+    setVoiceUnmatched([])
+    setVoiceConfirmQueue([])
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
+
+    setVoiceState('listening')
+    const rec = new SR()
+    rec.continuous = false
+    rec.interimResults = false
+    rec.maxAlternatives = 1
+
+    let handled = false
+    const timeout = setTimeout(() => rec.stop(), 10000)
+
+    rec.onresult = async (e) => {
+      handled = true
+      clearTimeout(timeout)
+      const transcript = e.results[0][0].transcript
+      setVoiceState('processing')
+      await processVoiceTranscript(transcript)
+      setVoiceState('idle')
+    }
+
+    rec.onerror = (err) => {
+      handled = true
+      clearTimeout(timeout)
+      setVoiceState('idle')
+      if (err.error !== 'no-speech' && err.error !== 'aborted') {
+        setVoiceError('mic_error')
+      }
+    }
+
+    rec.onend = () => {
+      clearTimeout(timeout)
+      if (!handled) setVoiceState('idle')
+    }
+
+    try {
+      rec.start()
+    } catch {
+      setVoiceState('idle')
+      setVoiceError('mic_error')
+    }
+  }
+
+  function openVoiceConfirm(queue) {
+    const { item, portionList, basePer100g, isBeverage, portionsFailed, portionIdx, parsedQuantity } = queue[0]
+    setResults([item])
+    setSearchError(null)
+    setConfirmingItem(item)
+    setConfirmPortions(portionList)
+    setConfirmBasePer100g(basePer100g)
+    setConfirmIsBeverage(isBeverage)
+    setConfirmPortionsFailed(portionsFailed)
+    setConfirmPortionIdx(portionIdx)
+    setConfirmQuantity(parsedQuantity)
+    setConfirmGramsInput(100)
+    setConfirmPortionsLoading(false)
+  }
+
+  async function processVoiceTranscript(transcript) {
+    const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
+    if (!apiKey) { setVoiceError('parse_error'); return }
+
+    let parsed
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 500,
+          system: 'You are a food logging assistant. Parse the user\'s spoken input into a JSON array of food items. Each item should have:\n- food_name: string (the food item, cleaned up for search)\n- quantity: number (default 1 if not specified)\n- serving_hint: string (e.g. \'medium\', \'large\', \'cup\', \'slice\' — null if not specified)\n\nReturn ONLY valid JSON, no explanation, no markdown. Example output: [{"food_name": "banana", "quantity": 1, "serving_hint": "medium"}, {"food_name": "hard boiled egg", "quantity": 2, "serving_hint": null}]',
+          messages: [{ role: 'user', content: transcript }],
+        }),
+      })
+      if (!res.ok) throw new Error('API error')
+      const data = await res.json()
+      const text = data.content?.[0]?.text ?? ''
+      parsed = JSON.parse(text)
+      if (!Array.isArray(parsed)) throw new Error('Not an array')
+    } catch {
+      setVoiceError('parse_error')
+      return
+    }
+
+    const unmatched = []
+    const queue = []
+
+    for (const item of parsed) {
+      if (!item.food_name) continue
+      try {
+        const searchResults = await api.searchFood(item.food_name)
+        const match = Array.isArray(searchResults) && searchResults[0]
+        if (!match) { unmatched.push(item); continue }
+
+        let portionList = []
+        let basePer100g = null
+        let isBeverage = false
+        let portionsFailed = false
+        let portionIdx = 0
+
+        try {
+          const portionsData = await api.getFoodPortions(match.fdcId)
+          portionList = dedupePortions(portionsData.portions ?? [])
+          basePer100g = portionsData.basePer100g ?? null
+          isBeverage = portionsData.isBeverage ?? false
+
+          portionIdx = portionList.findIndex(p => p.label !== '100g')
+          if (portionIdx < 0) portionIdx = 0
+
+          if (item.serving_hint && portionList.length > 0) {
+            const hint = item.serving_hint.toLowerCase()
+            const hintIdx = portionList.findIndex(p => {
+              const name = (p.portionDescription || p.description || p.modifier || '').toLowerCase()
+              return name.includes(hint)
+            })
+            if (hintIdx >= 0) portionIdx = hintIdx
+          }
+        } catch {
+          portionsFailed = true
+        }
+
+        queue.push({ item: match, portionList, basePer100g, isBeverage, portionsFailed, portionIdx, parsedQuantity: item.quantity ?? 1 })
+      } catch {
+        unmatched.push(item)
+      }
+    }
+
+    if (unmatched.length > 0) setVoiceUnmatched(unmatched)
+
+    if (queue.length > 0) {
+      setVoiceConfirmQueue(queue)
+      openVoiceConfirm(queue)
+    }
   }
 
   // Computed values for confirm panel preview
@@ -294,6 +461,14 @@ function FoodSection({ selectedDate, setSelectedDate }) {
       portionLabel,
     }])
 
+    if (voiceConfirmQueue.length > 1) {
+      const nextQueue = voiceConfirmQueue.slice(1)
+      setVoiceConfirmQueue(nextQueue)
+      openVoiceConfirm(nextQueue)
+      return
+    }
+
+    setVoiceConfirmQueue([])
     setConfirmingItem(null)
     setConfirmPortions([])
     setConfirmBasePer100g(null)
@@ -594,6 +769,16 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     }
   }
 
+  async function handleCopyMeal(mt) {
+    setCopyConfirmMeal(null)
+    try {
+      await api.copyMeal(selectedDate, mt, today)
+      setCopySuccessMeal(mt)
+      clearTimeout(copySuccessRef.current)
+      copySuccessRef.current = setTimeout(() => setCopySuccessMeal(null), 2500)
+    } catch { }
+  }
+
   // Grouping
   const logByMeal = MEAL_TYPES.reduce((acc, mt) => {
     acc[mt] = todayLog.filter(e => (e.meal_type || '').toLowerCase() === mt.toLowerCase())
@@ -663,19 +848,59 @@ function FoodSection({ selectedDate, setSelectedDate }) {
           </div>
 
           <>
-            <div className="fs-input-wrap">
-              {loading && <span className="fs-spinner" />}
-              <input
-                className={`text-input fs-input${loading ? ' fs-input--loading' : ''}`}
-                type="text"
-                placeholder="Search foods (e.g. banana, canned soup, Greek yogurt)"
-                value={query}
-                onChange={e => { setQuery(e.target.value); setShowManual(false) }}
-              />
-              {query && !loading && (
-                <button className="fs-clear" onClick={clearQuery} aria-label="Clear search">×</button>
+            <div className="fs-input-row">
+              <div className="fs-input-wrap">
+                {loading && <span className="fs-spinner" />}
+                <input
+                  className={`text-input fs-input${loading ? ' fs-input--loading' : ''}`}
+                  type="text"
+                  placeholder="Search foods (e.g. banana, canned soup, Greek yogurt)"
+                  value={query}
+                  onChange={e => { setQuery(e.target.value); setShowManual(false) }}
+                />
+                {query && !loading && (
+                  <button className="fs-clear" onClick={clearQuery} aria-label="Clear search">×</button>
+                )}
+              </div>
+              {voiceSupported && (
+                <button
+                  className={`fs-mic-btn${voiceState === 'listening' ? ' fs-mic-btn--listening' : ''}${voiceState === 'processing' ? ' fs-mic-btn--processing' : ''}`}
+                  onClick={handleVoiceClick}
+                  disabled={voiceState !== 'idle'}
+                  aria-label={voiceState === 'listening' ? 'Listening…' : voiceState === 'processing' ? 'Processing…' : 'Search by voice'}
+                  title="Search by voice"
+                >
+                  {voiceState === 'processing' ? (
+                    <span className="fs-mic-spinner" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                  )}
+                </button>
               )}
             </div>
+            {voiceError === 'mic_error' && (
+              <div className="fh-voice-banner fh-voice-banner--error">
+                <span>Microphone error — try again</span>
+                <button className="fh-voice-dismiss" onClick={() => setVoiceError(null)} aria-label="Dismiss">×</button>
+              </div>
+            )}
+            {voiceError === 'parse_error' && (
+              <div className="fh-voice-banner fh-voice-banner--error">
+                <span>Couldn't parse that — try again or type your food</span>
+                <button className="fh-voice-dismiss" onClick={() => setVoiceError(null)} aria-label="Dismiss">×</button>
+              </div>
+            )}
+            {voiceUnmatched.length > 0 && (
+              <div className="fh-voice-banner fh-voice-banner--warn">
+                <span>No match found for: {voiceUnmatched.map(i => i.food_name).join(', ')}</span>
+                <button className="fh-voice-dismiss" onClick={() => setVoiceUnmatched([])} aria-label="Dismiss">×</button>
+              </div>
+            )}
             <button className="fs-manual-link" onClick={() => { setManualDate(selectedDate); setShowManual(v => !v); setConfirmingItem(null) }}>
               {showManual ? '↑ Hide manual entry' : '+ Enter manually'}
             </button>
@@ -915,20 +1140,41 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 return (
                   <div key={mt} className="fh-meal-group">
                     <div
-                      className="fh-meal-group-header fh-meal-group-header--clickable"
+                      className={`fh-meal-group-header fh-meal-group-header--clickable${!isToday ? ' fh-meal-group-header--past' : ''}`}
                       onClick={() => setCollapsedMeals(prev => {
                         const next = new Set(prev)
                         next.has(mt) ? next.delete(mt) : next.add(mt)
                         return next
                       })}
                     >
-                      <span className="fh-meal-group-label">{mt}</span>
-                      <div className="fh-meal-group-header-right">
-                        <span className="fh-meal-group-totals">
-                          Na {Math.round(mtSodium)}mg · K {Math.round(mtPotassium)}mg · Mg {Math.round(mtMagnesium)}mg
-                        </span>
-                        <span className={`fh-meals-chevron${isCollapsed ? '' : ' fh-meals-chevron--up'}`} aria-hidden="true">›</span>
+                      <div className="fh-meal-group-header-row1">
+                        <span className="fh-meal-group-label">{mt}</span>
+                        <div className="fh-meal-group-header-right">
+                          <span className="fh-meal-group-totals">
+                            Na {Math.round(mtSodium)}mg · K {Math.round(mtPotassium)}mg · Mg {Math.round(mtMagnesium)}mg
+                          </span>
+                          <span className={`fh-meals-chevron${isCollapsed ? '' : ' fh-meals-chevron--up'}`} aria-hidden="true">›</span>
+                        </div>
                       </div>
+                      {!isToday && (
+                        <div className="fh-meal-group-copy-row" onClick={e => e.stopPropagation()}>
+                          {copySuccessMeal === mt ? (
+                            <span className="fh-copy-success">{mt} copied to today</span>
+                          ) : copyConfirmMeal === mt ? (
+                            <>
+                              <span className="fh-copy-confirm-msg">Copy {mt} to today?</span>
+                              <button className="fh-copy-confirm-yes" onClick={() => handleCopyMeal(mt)}>Yes, copy</button>
+                              <button className="fh-copy-confirm-cancel" onClick={() => setCopyConfirmMeal(null)}>Cancel</button>
+                            </>
+                          ) : (
+                            <button
+                              className="fh-copy-btn"
+                              onClick={e => { e.stopPropagation(); setCopyConfirmMeal(mt) }}
+                              aria-label={`Copy ${mt} to today`}
+                            >Copy to Today</button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className={`fh-meal-group-body${isCollapsed ? '' : ' fh-meal-group-body--open'}`}>
                       <ul className="fs-log-list">

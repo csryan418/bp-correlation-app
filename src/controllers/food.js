@@ -120,6 +120,42 @@ export function list(req, res) {
   res.json(rows);
 }
 
+export function copyMeal(req, res) {
+  const { source_date, meal_type, target_date } = req.body;
+  if (!source_date || !meal_type || !target_date) {
+    return res.status(400).json({ error: 'source_date, meal_type, and target_date are required' });
+  }
+  const db = getDb();
+  const rows = db
+    .prepare('SELECT * FROM food_log WHERE date = ? AND LOWER(meal_type) = LOWER(?)')
+    .all(source_date, meal_type);
+
+  if (rows.length === 0) return res.json([]);
+
+  const loggedTime = new Date().toISOString();
+  const newMealId = Date.now();
+  const insertStmt = db.prepare(
+    `INSERT INTO food_log
+      (date, meal_type, meal_id, logged_time, food_name, serving_size, fdc_id, sodium_mg, potassium_mg, magnesium_mg, calories)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const created = db.transaction(() =>
+    rows.map(r => {
+      const result = insertStmt.run(
+        target_date, r.meal_type, newMealId, loggedTime,
+        r.food_name, r.serving_size, r.fdc_id,
+        r.sodium_mg, r.potassium_mg, r.magnesium_mg, r.calories
+      );
+      return db
+        .prepare('SELECT *, food_name AS description FROM food_log WHERE id = ?')
+        .get(result.lastInsertRowid);
+    })
+  )();
+
+  res.status(201).json(created);
+}
+
 export async function create(req, res) {
   const { date, meal_type, food_name, serving_size } = req.body;
   if (!date || !meal_type || !food_name) {

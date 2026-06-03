@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import {
   list, create, search, logFood, listLog, deleteFood,
-  getPortions, updateFoodLog,
+  getPortions, updateFoodLog, copyMeal,
 } from '../controllers/food.js';
 
 const router = Router();
 
 // Specific sub-paths first to avoid collision with the base POST /
+router.post('/copy-meal',        copyMeal);
 router.post('/search',          search);
 router.get('/portions/:fdcId',  getPortions);
 router.post('/log',             logFood);

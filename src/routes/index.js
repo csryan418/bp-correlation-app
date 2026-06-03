@@ -11,6 +11,8 @@ import supplementsRoutes from './supplements.js';
 import savedMealsRoutes from './savedMeals.js';
 import mealsRoutes from './meals.js';
 import sleepRoutes from './sleep.js';
+import activityRoutes from './activity.js';
+import checkinRoutes from './checkin.js';
 
 const router = Router();
 
@@ -26,5 +28,7 @@ router.use('/apple-health', appleHealthRoutes);
 router.use('/saved-meals', savedMealsRoutes);
 router.use('/meals', mealsRoutes);
 router.use('/sleep', sleepRoutes);
+router.use('/activity', activityRoutes);
+router.use('/checkin', checkinRoutes);
 
 export default router;

@@ -13,6 +13,7 @@ async function request(path, options = {}) {
 export const api = {
   bloodPressure: () => request('/blood-pressure'),
   insights: () => request('/insights/correlations'),
+  insightsFull: () => request('/insights/full'),
   health: () => request('/health'),
   searchFood: (name) =>
     request('/food/search', {
@@ -29,6 +30,8 @@ export const api = {
   updateFoodLog: (id, data) =>
     request(`/food/log/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFoodLog: (id) => request(`/food/log/${id}`, { method: 'DELETE' }),
+  copyMeal: (source_date, meal_type, target_date) =>
+    request('/food/copy-meal', { method: 'POST', body: JSON.stringify({ source_date, meal_type, target_date }) }),
   logHydration: (oz, date) =>
     request('/hydration', {
       method: 'POST',
@@ -64,4 +67,8 @@ export const api = {
   getSupplementLog: (date) => request(`/supplements/log?date=${date}`),
   logSupplement: (data) => request('/supplements/log', { method: 'POST', body: JSON.stringify(data) }),
   sleepTrends: () => request('/sleep/trends'),
+  activityYesterday: () => request('/activity/yesterday'),
+  getCheckinToday: () => request('/checkin/today'),
+  saveCheckin: (data) =>
+    request('/checkin', { method: 'POST', body: JSON.stringify(data) }),
 }

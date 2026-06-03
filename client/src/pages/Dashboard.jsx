@@ -71,6 +71,18 @@ function extractInsights(data) {
     .slice(0, 2)
 }
 
+// API fields: date, activity_score, steps, active_calories, equivalent_walking_distance
+function parseActivity(data) {
+  if (!data) return null
+  const score = data.activity_score ?? null
+  const steps = data.steps ?? null
+  const calories = data.active_calories ?? null
+  const distMeters = data.equivalent_walking_distance ?? null
+  const distMiles = distMeters != null ? (distMeters * 0.000621371).toFixed(1) : null
+  if (score == null && steps == null && calories == null) return null
+  return { score, steps, calories, distMiles }
+}
+
 // API fields: id, date, hrv_average, deep_sleep_minutes, total_sleep_minutes, resting_heart_rate, readiness_score
 function parseOura(data) {
   if (!data) return null
@@ -287,6 +299,7 @@ export default function Dashboard() {
   const [bp, setBp] = useState({ data: null, loading: true, error: null })
   const [insights, setInsights] = useState({ data: null, loading: true, error: null })
   const [oura, setOura] = useState({ data: null, loading: true, error: null })
+  const [activity, setActivity] = useState({ data: null, loading: true, error: null })
 
   useEffect(() => {
     api
@@ -303,11 +316,17 @@ export default function Dashboard() {
       .oura()
       .then(data => setOura({ data, loading: false, error: null }))
       .catch(err => setOura({ data: null, loading: false, error: err.message }))
+
+    api
+      .activityYesterday()
+      .then(data => setActivity({ data, loading: false, error: null }))
+      .catch(err => setActivity({ data: null, loading: false, error: err.message }))
   }, [])
 
   const today = parseTodayReadings(bp.data)
   const topInsights = extractInsights(insights.data)
   const recovery = parseOura(oura.data)
+  const activityStats = parseActivity(activity.data)
   const bpReadings = extractBPReadings(bp.data)
 
   return (
@@ -392,9 +411,65 @@ export default function Dashboard() {
                 unit="/ 100"
                 missing="—"
               />
+              <RecoveryStat
+                label="Total Sleep"
+                value={formatDeepSleep(recovery.totalMinutes)}
+                unit=""
+                missing="—"
+              />
             </div>
           )}
         </section>
+
+        {/* Card 4 — Yesterday's Activity */}
+        <section className="card activity-card">
+          <h2 className="card-title">Yesterday's Activity</h2>
+
+          {activity.loading && (
+            <div className="recovery-skeleton">
+              <div className="loading-skeleton" style={{ height: '3.75rem', marginBottom: '0.5rem' }} />
+              <div className="loading-skeleton" style={{ height: '3.75rem' }} />
+            </div>
+          )}
+
+          {!activity.loading && !activityStats && (
+            <p className="card-notice">
+              {activity.error
+                ? 'No activity data available.'
+                : 'No activity data for yesterday.'}
+            </p>
+          )}
+
+          {activityStats && (
+            <div className="activity-stats">
+              <RecoveryStat
+                label="Activity Score"
+                value={activityStats.score}
+                unit="/ 100"
+                missing="—"
+              />
+              <RecoveryStat
+                label="Steps"
+                value={activityStats.steps != null ? activityStats.steps.toLocaleString() : null}
+                unit=""
+                missing="—"
+              />
+              <RecoveryStat
+                label="Active Calories"
+                value={activityStats.calories}
+                unit="kcal"
+                missing="—"
+              />
+              <RecoveryStat
+                label="Walking Distance"
+                value={activityStats.distMiles}
+                unit="mi"
+                missing="—"
+              />
+            </div>
+          )}
+        </section>
+
         {/* BP trend — spans full grid width */}
         <section className="card sparkline-card">
           <div className="sparkline-card-header">
