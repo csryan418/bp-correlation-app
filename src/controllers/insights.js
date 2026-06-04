@@ -190,10 +190,10 @@ export function getCorrelations(req, res) {
 function getSupplementStreakInsights(db) {
   // Get all supplement log dates grouped by supplement name, oldest first
   const rows = db.prepare(`
-    SELECT supplement_name, date
-    FROM supplements_log
-    GROUP BY supplement_name, date
-    ORDER BY supplement_name, date ASC
+    SELECT s.name AS supplement_name, sl.date
+    FROM supplement_logs sl JOIN supplements s ON s.id = sl.supplement_id
+    GROUP BY s.name, sl.date
+    ORDER BY s.name, sl.date ASC
   `).all();
 
   if (rows.length === 0) return [];
@@ -528,7 +528,7 @@ export function getFullInsights(req, res) {
     `SELECT id, name FROM supplements WHERE active = 1 ORDER BY name`
   ).all();
   const takenStmt = db.prepare(
-    `SELECT date FROM supplement_logs WHERE supplement_id = ? AND taken = 1`
+    `SELECT date FROM supplement_logs sl JOIN supplements s ON s.id = sl.supplement_id WHERE supplement_id = ? AND taken = 1`
   );
   const supplementCorrelations = [];
 

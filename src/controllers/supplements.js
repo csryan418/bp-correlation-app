@@ -6,14 +6,16 @@ export function listActive(req, res) {
   const rows = getDb()
     .prepare('SELECT * FROM supplements WHERE active = 1 ORDER BY time_of_day, name ASC')
     .all();
-  res.json(rows);
+  res.json(rows.map(row => ({ ...row, times: JSON.parse(row.times || '["morning"]') })));
 }
 
 export function createSupplement(req, res) {
-  const { name, dose, unit = 'mg', time_of_day = 'morning' } = req.body;
+  const { name, dose, unit = 'mg', time_of_day, times: timesInput } = req.body;
   if (!name?.trim() || !dose?.trim()) {
     return res.status(400).json({ error: 'name and dose are required' });
   }
+  const times = timesInput ?? (time_of_day ? [time_of_day] : ['morning']);
+  const primaryTime = times[0];
   const db = getDb();
   const trimmedName = name.trim();
   const trimmedDose = dose.trim();
@@ -28,8 +30,8 @@ export function createSupplement(req, res) {
     // Reactivate inactive supplement with updated values
     const doseChanged = trimmedDose !== existing.dose || unit !== existing.unit;
     db.transaction(() => {
-      db.prepare('UPDATE supplements SET active = 1, dose = ?, unit = ?, time_of_day = ? WHERE id = ?')
-        .run(trimmedDose, unit, time_of_day, existing.id);
+      db.prepare('UPDATE supplements SET active = 1, dose = ?, unit = ?, time_of_day = ?, times = ? WHERE id = ?')
+        .run(trimmedDose, unit, primaryTime, JSON.stringify(times), existing.id);
       if (doseChanged) {
         db.prepare('UPDATE supplement_dose_history SET effective_to = ? WHERE supplement_id = ? AND effective_to IS NULL')
           .run(now, existing.id);
@@ -37,19 +39,21 @@ export function createSupplement(req, res) {
           .run(existing.id, trimmedDose, unit, now);
       }
     })();
-    return res.json(db.prepare('SELECT * FROM supplements WHERE id = ?').get(existing.id));
+    const row = db.prepare('SELECT * FROM supplements WHERE id = ?').get(existing.id);
+    return res.json({ ...row, times: JSON.parse(row.times || '["morning"]') });
   }
 
   const id = db.transaction(() => {
     const sup = db
-      .prepare('INSERT INTO supplements (name, dose, unit, time_of_day) VALUES (?, ?, ?, ?)')
-      .run(trimmedName, trimmedDose, unit, time_of_day);
+      .prepare('INSERT INTO supplements (name, dose, unit, time_of_day, times) VALUES (?, ?, ?, ?, ?)')
+      .run(trimmedName, trimmedDose, unit, primaryTime, JSON.stringify(times));
     db
       .prepare('INSERT INTO supplement_dose_history (supplement_id, dose, unit, effective_from) VALUES (?, ?, ?, ?)')
       .run(sup.lastInsertRowid, trimmedDose, unit, now);
     return sup.lastInsertRowid;
   })();
-  res.status(201).json(db.prepare('SELECT * FROM supplements WHERE id = ?').get(id));
+  const row = db.prepare('SELECT * FROM supplements WHERE id = ?').get(id);
+  res.status(201).json({ ...row, times: JSON.parse(row.times || '["morning"]') });
 }
 
 export function deduplicateSupplements() {
@@ -101,7 +105,7 @@ export function deduplicateSupplements() {
 
 export function updateSupplement(req, res) {
   const { id } = req.params;
-  const { name, dose, unit, time_of_day } = req.body;
+  const { name, dose, unit, time_of_day, times: timesInput } = req.body;
   const db = getDb();
   const existing = db.prepare('SELECT * FROM supplements WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -109,11 +113,13 @@ export function updateSupplement(req, res) {
   const newDose = dose ?? existing.dose;
   const newUnit = unit ?? existing.unit;
   const doseChanged = (dose != null && dose !== existing.dose) || (unit != null && unit !== existing.unit);
+  const times = timesInput ?? (time_of_day ? [time_of_day] : JSON.parse(existing.times || '["morning"]'));
+  const primaryTime = times[0];
   const now = today();
 
   db.transaction(() => {
-    db.prepare('UPDATE supplements SET name = ?, dose = ?, unit = ?, time_of_day = ? WHERE id = ?')
-      .run(name ?? existing.name, newDose, newUnit, time_of_day ?? existing.time_of_day, id);
+    db.prepare('UPDATE supplements SET name = ?, dose = ?, unit = ?, time_of_day = ?, times = ? WHERE id = ?')
+      .run(name ?? existing.name, newDose, newUnit, primaryTime, JSON.stringify(times), id);
     if (doseChanged) {
       db.prepare('UPDATE supplement_dose_history SET effective_to = ? WHERE supplement_id = ? AND effective_to IS NULL')
         .run(now, id);
@@ -122,7 +128,8 @@ export function updateSupplement(req, res) {
     }
   })();
 
-  res.json(db.prepare('SELECT * FROM supplements WHERE id = ?').get(id));
+  const row = db.prepare('SELECT * FROM supplements WHERE id = ?').get(id);
+  res.json({ ...row, times: JSON.parse(row.times || '["morning"]') });
 }
 
 export function deleteSupplement(req, res) {
@@ -142,7 +149,9 @@ export function getLog(req, res) {
 
   res.json(supplements.map(s => ({
     ...s,
+    times: JSON.parse(s.times || '["morning"]'),
     taken: logMap[s.id]?.taken ?? 0,
+    log_time_of_day: logMap[s.id]?.time_of_day ?? null,
     log_id: logMap[s.id]?.id ?? null,
   })));
 }

@@ -1530,6 +1530,59 @@ input[type="date"].text-input::-webkit-calendar-picker-indicator {
   font-weight: 500;
 }
 
+.fs-computed-item--clickable {
+  cursor: text;
+  transition: border-color 0.15s;
+}
+
+.fs-computed-item--clickable:hover {
+  border-color: var(--accent);
+}
+
+.fs-computed-item--editing {
+  border-color: var(--accent);
+}
+
+.fs-computed-item--edited {
+  border-color: var(--amber);
+}
+
+.fs-computed-input {
+  width: 100%;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  padding: 0;
+  font-family: inherit;
+  -moz-appearance: textfield;
+}
+
+.fs-computed-input::-webkit-inner-spin-button,
+.fs-computed-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.fs-computed-unit {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-top: -0.0625rem;
+}
+
+.fs-computed-edited {
+  font-size: 0.5625rem;
+  color: var(--amber);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .fs-confirm-actions {
   display: flex;
   align-items: center;
@@ -2270,6 +2323,33 @@ input[type="date"].text-input::-webkit-calendar-picker-indicator {
   min-width: 10rem;
 }
 
+.fh-supp-time-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.125rem;
+}
+
+.fh-supp-time-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fh-supp-time-check label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fh-supp-time-check input[type="checkbox"] {
+  cursor: pointer;
+  width: 0.875rem;
+  height: 0.875rem;
+  accent-color: var(--accent);
+}
+
 /* ── Voice search ── */
 
 .fs-input-row {
@@ -2374,4 +2454,79 @@ input[type="date"].text-input::-webkit-calendar-picker-indicator {
 
 .fh-voice-dismiss:hover {
   opacity: 1;
+}
+
+/* ── Nutrient override in confirm panel ── */
+
+.fs-edit-nutrients-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.625rem;
+  display: block;
+  transition: color 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.fs-edit-nutrients-toggle:hover {
+  color: var(--accent);
+}
+
+.fs-edit-nutrients-panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.fs-nutrients-edited-badge {
+  display: inline-block;
+  font-size: 0.625rem;
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.fs-serving-recalc-warning {
+  background: var(--amber-dim);
+  border: 1px solid rgba(212, 151, 58, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.fs-serving-recalc-msg {
+  font-size: 0.75rem;
+  color: var(--amber);
+}
+
+.fs-serving-recalc-actions {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+}
+
+.fs-serving-recalc-btn {
+  background: none;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 0.75rem;
+  padding: 0.1875rem 0.625rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.fs-serving-recalc-btn:hover {
+  background: var(--amber-dim);
 }

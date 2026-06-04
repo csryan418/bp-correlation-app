@@ -290,12 +290,17 @@ function correlationStrength(r) {
 
 export default function SleepRecovery() {
   const [data, setData] = useState({ trends: null, correlation: null, loading: true, error: null })
+  const [hrv, setHrv] = useState({ data: null, loading: true, error: null })
 
   useEffect(() => {
     api
       .sleepTrends()
       .then(d => setData({ trends: d.trends, correlation: d.correlation, loading: false, error: null }))
       .catch(err => setData({ trends: null, correlation: null, loading: false, error: err.message }))
+    api
+      .sleepHrvInsights()
+      .then(d => setHrv({ data: d, loading: false, error: null }))
+      .catch(err => setHrv({ data: null, loading: false, error: err.message }))
   }, [])
 
   const { trends, correlation, loading, error } = data
@@ -413,7 +418,88 @@ export default function SleepRecovery() {
           )}
         </section>
 
+        {/* HRV → Next-Day BP */}
+        <section className="sr-card sr-card--correlation">
+          <h2 className="sr-card-title">HRV → Next-Day Blood Pressure</h2>
+          <p className="sr-card-desc">
+            How sleep quality flows through HRV to affect next-morning BP
+            {hrv.data?.observations > 0 && ` — ${hrv.data.observations} paired days`}
+          </p>
+
+          {hrv.loading ? (
+            <div className="sr-corr-skeleton">
+              <div className="loading-skeleton" style={{ height: '5rem', marginBottom: '0.75rem' }} />
+              <div className="loading-skeleton" style={{ height: '3rem' }} />
+            </div>
+          ) : hrv.error ? (
+            <p className="sr-empty sr-empty--error">Could not load HRV correlation data.</p>
+          ) : (
+            <div className="sr-corr-body">
+              <div className="sr-hrv-rows">
+                <HrvInsightRow
+                  label="DEEP SLEEP → HRV"
+                  r={hrv.data?.deep_hrv?.r ?? null}
+                  n={hrv.data?.deep_hrv?.n ?? 0}
+                  text={
+                    hrv.data?.deep_hrv?.r != null
+                      ? `More deep sleep ${hrv.data.deep_hrv.r > 0 ? 'is' : 'is not'} associated with higher next-morning HRV (r = ${hrv.data.deep_hrv.r > 0 ? '+' : ''}${hrv.data.deep_hrv.r.toFixed(3)}, ${hrv.data.deep_hrv.n} paired days).`
+                      : 'Not enough data yet (fewer than 7 paired days).'
+                  }
+                />
+                <HrvInsightRow
+                  label="HRV → DIASTOLIC"
+                  r={hrv.data?.hrv_bp?.r_diastolic ?? null}
+                  n={hrv.data?.hrv_bp?.n ?? 0}
+                  secondaryR={hrv.data?.hrv_bp?.r_systolic ?? null}
+                  text={
+                    hrv.data?.hrv_bp?.r_diastolic != null
+                      ? `Higher HRV ${hrv.data.hrv_bp.r_diastolic < 0 ? 'is' : 'is not'} associated with lower next-morning diastolic BP.${hrv.data.hrv_bp.r_systolic != null ? ` (SYS r = ${hrv.data.hrv_bp.r_systolic > 0 ? '+' : ''}${hrv.data.hrv_bp.r_systolic.toFixed(3)})` : ''}`
+                      : 'Not enough data yet (fewer than 7 paired days).'
+                  }
+                />
+                <HrvInsightRow
+                  label="THE CHAIN"
+                  r={null}
+                  n={hrv.data?.deep_bp?.n ?? 0}
+                  text={
+                    hrv.data?.chain?.median_deep != null &&
+                    hrv.data?.chain?.high_deep_dia != null &&
+                    hrv.data?.chain?.low_deep_dia != null
+                      ? `On nights with above-average deep sleep (above ${hrv.data.chain.median_deep} min), your next-morning diastolic averaged ${hrv.data.chain.high_deep_dia} mmHg. On nights with below-average deep sleep, it averaged ${hrv.data.chain.low_deep_dia} mmHg — a ${Math.abs(Math.round((hrv.data.chain.high_deep_dia - hrv.data.chain.low_deep_dia) * 10) / 10)} mmHg difference.`
+                      : 'Not enough data yet (fewer than 7 paired days).'
+                  }
+                />
+              </div>
+            </div>
+          )}
+        </section>
+
       </div>
+    </div>
+  )
+}
+
+function HrvInsightRow({ label, r, n, text, secondaryR }) {
+  const strength = correlationStrength(r)
+  const strengthClass = strength === 'strong'
+    ? 'sr-r--strong'
+    : strength === 'moderate'
+    ? 'sr-r--moderate'
+    : strength === 'weak'
+    ? 'sr-r--weak'
+    : 'sr-r--none'
+
+  return (
+    <div className="sr-corr-stat">
+      <div className="sr-corr-stat-header">
+        <span className="sr-corr-stat-label">{label}</span>
+        {r !== null && (
+          <span className={`sr-r-badge ${strengthClass}`}>
+            r = {r > 0 ? '+' : ''}{r.toFixed(3)}
+          </span>
+        )}
+      </div>
+      <p className="sr-corr-interp">{text}</p>
     </div>
   )
 }

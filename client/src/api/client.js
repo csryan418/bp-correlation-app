@@ -5,7 +5,10 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}))
+    throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`)
+  }
   if (res.status === 204) return null
   return res.json()
 }
@@ -67,6 +70,7 @@ export const api = {
   getSupplementLog: (date) => request(`/supplements/log?date=${date}`),
   logSupplement: (data) => request('/supplements/log', { method: 'POST', body: JSON.stringify(data) }),
   sleepTrends: () => request('/sleep/trends'),
+  sleepHrvInsights: () => request('/sleep/hrv-insights'),
   activityYesterday: () => request('/activity/yesterday'),
   getCheckinToday: () => request('/checkin/today'),
   saveCheckin: (data) =>

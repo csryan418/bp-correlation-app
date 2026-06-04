@@ -102,6 +102,13 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [confirmQuantity, setConfirmQuantity] = useState(1)
   const [confirmGramsInput, setConfirmGramsInput] = useState(100)
   const [confirmIsBeverage, setConfirmIsBeverage] = useState(false)
+  const [confirmActiveTile, setConfirmActiveTile] = useState(null)
+  const [confirmDraftValue, setConfirmDraftValue] = useState('')
+  const [confirmNutrientsEdited, setConfirmNutrientsEdited] = useState(false)
+  const [confirmManualSodium, setConfirmManualSodium] = useState('')
+  const [confirmManualPotassium, setConfirmManualPotassium] = useState('')
+  const [confirmManualMagnesium, setConfirmManualMagnesium] = useState('')
+  const [confirmServingChanged, setConfirmServingChanged] = useState(false)
 
   // Basket — items staged for "Log Meal"
   const [basket, setBasket] = useState([])
@@ -206,6 +213,16 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setToast(true)
     toastRef.current = setTimeout(() => setToast(false), 2500)
   }
+
+  useEffect(() => {
+    setConfirmActiveTile(null)
+    setConfirmDraftValue('')
+    setConfirmNutrientsEdited(false)
+    setConfirmManualSodium('')
+    setConfirmManualPotassium('')
+    setConfirmManualMagnesium('')
+    setConfirmServingChanged(false)
+  }, [confirmingItem])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -437,6 +454,9 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const confirmSodium    = confirmingItem ? calcMineral(confirmBase?.sodium_mg,    confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
   const confirmPotassium = confirmingItem ? calcMineral(confirmBase?.potassium_mg, confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
   const confirmMagnesium = confirmingItem ? calcMineral(confirmBase?.magnesium_mg, confirmGrams, confirmPortionsFailed ? 1 : confirmQuantity) : null
+  const effectiveSodium    = confirmNutrientsEdited && confirmManualSodium    !== '' ? parseFloat(confirmManualSodium)    : confirmSodium
+  const effectivePotassium = confirmNutrientsEdited && confirmManualPotassium !== '' ? parseFloat(confirmManualPotassium) : confirmPotassium
+  const effectiveMagnesium = confirmNutrientsEdited && confirmManualMagnesium !== '' ? parseFloat(confirmManualMagnesium) : confirmMagnesium
 
   function handleAddToBasket() {
     if (!confirmingItem) return
@@ -446,17 +466,24 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     const basePotassium = confirmPortionsFailed ? confirmingItem.potassium_mg : base?.potassium_mg
     const baseMagnesium = confirmPortionsFailed ? confirmingItem.magnesium_mg : base?.magnesium_mg
     const qty = confirmPortionsFailed ? 1 : confirmQuantity
+    const qtyNum = confirmPortionsFailed ? 1 : (parseFloat(confirmQuantity) || 1)
     const portionLabel = confirmPortionsFailed
       ? `${grams}g`
       : (confirmPortions[confirmPortionIdx]?.label ?? '100g')
+    const computedSodiumPU    = calcMineral(baseSodium,    grams, 1)
+    const computedPotassiumPU = calcMineral(basePotassium, grams, 1)
+    const computedMagnesiumPU = calcMineral(baseMagnesium, grams, 1)
+    const finalSodiumPU    = confirmNutrientsEdited && confirmManualSodium    !== '' ? (parseFloat(confirmManualSodium)    || 0) / qtyNum : computedSodiumPU
+    const finalPotassiumPU = confirmNutrientsEdited && confirmManualPotassium !== '' ? (parseFloat(confirmManualPotassium) || 0) / qtyNum : computedPotassiumPU
+    const finalMagnesiumPU = confirmNutrientsEdited && confirmManualMagnesium !== '' ? (parseFloat(confirmManualMagnesium) || 0) / qtyNum : computedMagnesiumPU
 
     setBasket(prev => [...prev, {
       key: `${confirmingItem.fdcId ?? 'manual'}-${Date.now()}`,
       fdcId: confirmingItem.fdcId ?? null,
       description: confirmingItem.description,
-      sodiumPerUnit:    calcMineral(baseSodium,    grams, 1),
-      potassiumPerUnit: calcMineral(basePotassium, grams, 1),
-      magnesiumPerUnit: calcMineral(baseMagnesium, grams, 1),
+      sodiumPerUnit:    finalSodiumPU,
+      potassiumPerUnit: finalPotassiumPU,
+      magnesiumPerUnit: finalMagnesiumPU,
       quantity: qty,
       portionLabel,
     }])
@@ -990,7 +1017,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                                 <>
                                   <input id={`qty-${item.fdcId}`} className="text-input text-input--narrow"
                                     type="number" min="1" step="1" value={confirmGramsInput}
-                                    onChange={e => setConfirmGramsInput(Math.max(1, parseInt(e.target.value) || 100))} />
+                                    onChange={e => { setConfirmGramsInput(Math.max(1, parseInt(e.target.value) || 100)); if (confirmNutrientsEdited) setConfirmServingChanged(true) }} />
                                   <span className="fs-serving-hint">g</span>
                                 </>
                               ) : (
@@ -998,10 +1025,10 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                                   <input id={`qty-${item.fdcId}`} className="text-input text-input--narrow"
                                     type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" value={confirmQuantity}
                                     onFocus={e => e.target.select()}
-                                    onChange={e => setConfirmQuantity(e.target.value)}
-                                    onBlur={e => { const v = parseFloat(e.target.value); setConfirmQuantity(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))) }} />
+                                    onChange={e => { setConfirmQuantity(e.target.value); if (confirmNutrientsEdited) setConfirmServingChanged(true) }}
+                                    onBlur={e => { const v = parseFloat(e.target.value); setConfirmQuantity(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))); if (confirmNutrientsEdited) setConfirmServingChanged(true) }} />
                                   <select className="fs-portion-select" value={confirmPortionIdx}
-                                    onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
+                                    onChange={e => { setConfirmPortionIdx(parseInt(e.target.value)); if (confirmNutrientsEdited) setConfirmServingChanged(true) }}>
                                     {confirmPortions.map((p, i) => {
                                       const name = p.portionDescription || p.description || p.modifier || 'Serving'
                                       return (
@@ -1017,10 +1044,46 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                               )}
                             </div>
                             <div className="fs-computed">
-                              <ComputedMineral label="Sodium"    value={confirmSodium}    />
-                              <ComputedMineral label="Potassium" value={confirmPotassium} />
-                              <ComputedMineral label="Magnesium" value={confirmMagnesium} />
+                              <ComputedMineral label="Sodium"    value={effectiveSodium}
+                                edited={confirmManualSodium !== ''}
+                                editing={confirmActiveTile === 'sodium'}
+                                draftValue={confirmDraftValue}
+                                onClickEdit={() => { setConfirmActiveTile('sodium');    setConfirmDraftValue(effectiveSodium    != null ? String(Math.round(effectiveSodium))    : '') }}
+                                onDraftChange={v => setConfirmDraftValue(v)}
+                                onCommit={() => { setConfirmManualSodium(confirmDraftValue);    if (confirmDraftValue !== '') { setConfirmNutrientsEdited(true); setConfirmServingChanged(false) } setConfirmActiveTile(null) }}
+                              />
+                              <ComputedMineral label="Potassium" value={effectivePotassium}
+                                edited={confirmManualPotassium !== ''}
+                                editing={confirmActiveTile === 'potassium'}
+                                draftValue={confirmDraftValue}
+                                onClickEdit={() => { setConfirmActiveTile('potassium'); setConfirmDraftValue(effectivePotassium != null ? String(Math.round(effectivePotassium)) : '') }}
+                                onDraftChange={v => setConfirmDraftValue(v)}
+                                onCommit={() => { setConfirmManualPotassium(confirmDraftValue); if (confirmDraftValue !== '') { setConfirmNutrientsEdited(true); setConfirmServingChanged(false) } setConfirmActiveTile(null) }}
+                              />
+                              <ComputedMineral label="Magnesium" value={effectiveMagnesium}
+                                edited={confirmManualMagnesium !== ''}
+                                editing={confirmActiveTile === 'magnesium'}
+                                draftValue={confirmDraftValue}
+                                onClickEdit={() => { setConfirmActiveTile('magnesium'); setConfirmDraftValue(effectiveMagnesium != null ? String(Math.round(effectiveMagnesium)) : '') }}
+                                onDraftChange={v => setConfirmDraftValue(v)}
+                                onCommit={() => { setConfirmManualMagnesium(confirmDraftValue); if (confirmDraftValue !== '') { setConfirmNutrientsEdited(true); setConfirmServingChanged(false) } setConfirmActiveTile(null) }}
+                              />
                             </div>
+                            {confirmServingChanged && (
+                              <div className="fs-serving-recalc-warning">
+                                <span className="fs-serving-recalc-msg">Serving changed — recalculate or keep manual values?</span>
+                                <div className="fs-serving-recalc-actions">
+                                  <button className="fs-serving-recalc-btn" onClick={() => {
+                                    setConfirmNutrientsEdited(false)
+                                    setConfirmManualSodium('')
+                                    setConfirmManualPotassium('')
+                                    setConfirmManualMagnesium('')
+                                    setConfirmServingChanged(false)
+                                  }}>Recalculate</button>
+                                  <button className="fs-cancel-btn" onClick={() => setConfirmServingChanged(false)}>Keep manual</button>
+                                </div>
+                              </div>
+                            )}
                             <div className="fs-confirm-actions">
                               <button className="btn-primary" onClick={handleAddToBasket}>
                                 + Add to basket
@@ -2146,11 +2209,34 @@ function MineralBadge({ value, type }) {
   )
 }
 
-function ComputedMineral({ label, value }) {
+function ComputedMineral({ label, value, edited = false, editing = false, draftValue = '', onClickEdit, onDraftChange, onCommit }) {
+  if (editing) {
+    return (
+      <div className="fs-computed-item fs-computed-item--editing">
+        <span className="fs-computed-label">{label}</span>
+        <input
+          className="fs-computed-input"
+          type="number"
+          min="0"
+          value={draftValue}
+          onChange={e => onDraftChange(e.target.value)}
+          onBlur={onCommit}
+          onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+          autoFocus
+        />
+        <span className="fs-computed-unit">mg</span>
+      </div>
+    )
+  }
   return (
-    <div className="fs-computed-item">
+    <div
+      className={`fs-computed-item${onClickEdit ? ' fs-computed-item--clickable' : ''}${edited ? ' fs-computed-item--edited' : ''}`}
+      onClick={onClickEdit}
+      title={onClickEdit ? 'Click to edit' : undefined}
+    >
       <span className="fs-computed-label">{label}</span>
       <span className="fs-computed-value">{value != null ? `${value}mg` : '—'}</span>
+      {edited && <span className="fs-computed-edited">edited</span>}
     </div>
   )
 }
@@ -2175,6 +2261,7 @@ function NutrientSummaryItem({ label, symbol, value, goal, colorVar }) {
 
 function SupplementsSection({ selectedDate }) {
   const [items, setItems] = useState([])
+  const [takenMap, setTakenMap] = useState({})
   const [showManage, setShowManage] = useState(false)
 
   useEffect(() => { fetchLog(selectedDate) }, [selectedDate])
@@ -2182,23 +2269,39 @@ function SupplementsSection({ selectedDate }) {
   async function fetchLog(date) {
     try {
       const data = await api.getSupplementLog(date)
-      setItems(Array.isArray(data) ? data : [])
+      const supplements = Array.isArray(data) ? data : []
+      setItems(supplements)
+      const map = {}
+      for (const s of supplements) {
+        if (s.taken) {
+          const loggedTime = s.log_time_of_day ?? s.time_of_day
+          map[`${s.id}_${loggedTime}`] = true
+        }
+      }
+      setTakenMap(map)
     } catch {}
   }
 
-  async function handleToggle(sup) {
-    const newTaken = sup.taken ? 0 : 1
-    setItems(prev => prev.map(s => s.id === sup.id ? { ...s, taken: newTaken } : s))
+  async function handleToggle(sup, timeGroup) {
+    const key = `${sup.id}_${timeGroup}`
+    const currentTaken = takenMap[key] ?? false
+    const newTaken = currentTaken ? 0 : 1
+    setTakenMap(prev => ({ ...prev, [key]: newTaken === 1 }))
     try {
-      await api.logSupplement({ supplement_id: sup.id, date: selectedDate, time_of_day: sup.time_of_day, taken: newTaken })
+      await api.logSupplement({ supplement_id: sup.id, date: selectedDate, time_of_day: timeGroup, taken: newTaken })
     } catch {
-      setItems(prev => prev.map(s => s.id === sup.id ? { ...s, taken: sup.taken } : s))
+      setTakenMap(prev => ({ ...prev, [key]: currentTaken }))
     }
   }
 
   const TIME_GROUPS = ['morning', 'afternoon', 'evening']
-  const grouped = TIME_GROUPS.reduce((acc, t) => { acc[t] = items.filter(s => s.time_of_day === t); return acc }, {})
-  const takenCount = items.filter(s => s.taken).length
+  const grouped = TIME_GROUPS.reduce((acc, t) => {
+    acc[t] = items.filter(s => (Array.isArray(s.times) ? s.times : [s.time_of_day]).includes(t))
+    return acc
+  }, {})
+  const takenCount = items.filter(s =>
+    (Array.isArray(s.times) ? s.times : [s.time_of_day]).some(t => takenMap[`${s.id}_${t}`])
+  ).length
 
   return (
     <section className="fh-saved-section">
@@ -2223,21 +2326,23 @@ function SupplementsSection({ selectedDate }) {
               <div key={t} className="fh-supp-group">
                 <div className="fh-supp-group-label">{t}</div>
                 <ul className="fh-supp-list">
-                  {grp.map(s => (
-                    <li key={s.id} className={`fh-supp-item${s.taken ? ' fh-supp-item--taken' : ''}`}>
+                  {grp.map(s => {
+                    const isTaken = takenMap[`${s.id}_${t}`] ?? false
+                    return (
+                    <li key={`${s.id}-${t}`} className={`fh-supp-item${isTaken ? ' fh-supp-item--taken' : ''}`}>
                       <button
                         className="fh-supp-toggle"
-                        onClick={() => handleToggle(s)}
-                        aria-label={s.taken ? 'Mark not taken' : 'Mark taken'}
+                        onClick={() => handleToggle(s, t)}
+                        aria-label={isTaken ? 'Mark not taken' : 'Mark taken'}
                       >
-                        {s.taken ? '✓' : ''}
+                        {isTaken ? '✓' : ''}
                       </button>
                       <div className="fh-supp-info">
                         <span className="fh-supp-name">{s.name}</span>
                         <span className="fh-supp-detail">{s.dose} {s.unit}</span>
                       </div>
                     </li>
-                  ))}
+                  )})}
                 </ul>
               </div>
             )
@@ -2260,7 +2365,7 @@ function ManageSupplementsPanel({ onClose }) {
   const [fName, setFName] = useState('')
   const [fDose, setFDose] = useState('')
   const [fUnit, setFUnit] = useState('mg')
-  const [fTime, setFTime] = useState('morning')
+  const [fTimes, setFTimes] = useState(['morning'])
 
   useEffect(() => { fetchAll() }, [])
 
@@ -2268,37 +2373,42 @@ function ManageSupplementsPanel({ onClose }) {
     try { const data = await api.getSupplements(); setSupplements(Array.isArray(data) ? data : []) } catch {}
   }
 
-  function resetForm() { setFName(''); setFDose(''); setFUnit('mg'); setFTime('morning') }
+  function resetForm() { setFName(''); setFDose(''); setFUnit('mg'); setFTimes(['morning']) }
 
   function startAdd() { setShowAdd(true); setEditingId(null); resetForm() }
 
   function startEdit(sup) {
     setEditingId(sup.id); setShowAdd(false)
-    setFName(sup.name); setFDose(sup.dose); setFUnit(sup.unit); setFTime(sup.time_of_day)
+    setFName(sup.name); setFDose(sup.dose); setFUnit(sup.unit)
+    setFTimes(Array.isArray(sup.times) ? sup.times : [sup.time_of_day])
   }
 
   async function handleAdd() {
     if (!fName.trim() || !fDose.trim()) return
     setSaving(true)
     try {
-      await api.createSupplement({ name: fName.trim(), dose: fDose.trim(), unit: fUnit, time_of_day: fTime })
+      await api.createSupplement({ name: fName.trim(), dose: fDose.trim(), unit: fUnit, times: fTimes })
       setShowAdd(false); resetForm(); fetchAll()
-    } catch {} finally { setSaving(false) }
+    } catch (err) {
+      alert(err.message || 'Failed to add supplement')
+    } finally { setSaving(false) }
   }
 
   async function handleEditSave(sup) {
     setSaving(true)
     try {
-      await api.updateSupplement(sup.id, { name: fName.trim(), dose: fDose.trim(), unit: fUnit, time_of_day: fTime })
+      await api.updateSupplement(sup.id, { name: fName.trim(), dose: fDose.trim(), unit: fUnit, times: fTimes })
       setEditingId(null); resetForm(); fetchAll()
-    } catch {} finally { setSaving(false) }
+    } catch (err) {
+      alert(err.message || 'Failed to save supplement')
+    } finally { setSaving(false) }
   }
 
   async function handleDeactivate(id) {
     try { await api.deleteSupplement(id); fetchAll() } catch {}
   }
 
-  const formProps = { fName, setFName, fDose, setFDose, fUnit, setFUnit, fTime, setFTime, disabled: saving }
+  const formProps = { fName, setFName, fDose, setFDose, fUnit, setFUnit, fTimes, setFTimes, disabled: saving }
 
   return (
     <div className="fh-relog-overlay">
@@ -2327,7 +2437,7 @@ function ManageSupplementsPanel({ onClose }) {
                   <div className="fh-supp-manage-row">
                     <div className="fh-supp-manage-info">
                       <span className="fh-supp-name">{sup.name}</span>
-                      <span className="fh-supp-detail">{sup.dose} {sup.unit} · {sup.time_of_day}</span>
+                      <span className="fh-supp-detail">{sup.dose} {sup.unit} · {(Array.isArray(sup.times) ? sup.times : [sup.time_of_day]).join(', ')}</span>
                     </div>
                     <div className="fh-supp-manage-actions">
                       <button className="fs-log-edit-btn" onClick={() => startEdit(sup)} title="Edit">✎</button>
@@ -2355,7 +2465,19 @@ function ManageSupplementsPanel({ onClose }) {
   )
 }
 
-function SupplementForm({ fName, setFName, fDose, setFDose, fUnit, setFUnit, fTime, setFTime, onSave, onCancel, saveLabel, disabled }) {
+function SupplementForm({ fName, setFName, fDose, setFDose, fUnit, setFUnit, fTimes, setFTimes, onSave, onCancel, saveLabel, disabled }) {
+  const ALL_TIMES = ['morning', 'afternoon', 'evening']
+
+  function toggleTime(t) {
+    setFTimes(prev => {
+      if (prev.includes(t)) {
+        if (prev.length === 1) return prev
+        return prev.filter(x => x !== t)
+      }
+      return [...prev, t]
+    })
+  }
+
   return (
     <div className="fh-supp-form">
       <div className="fh-supp-form-row">
@@ -2381,11 +2503,22 @@ function SupplementForm({ fName, setFName, fDose, setFDose, fUnit, setFUnit, fTi
         </div>
         <div className="fs-manual-field">
           <label className="fs-manual-label">Time</label>
-          <select className="fs-portion-select" value={fTime} onChange={e => setFTime(e.target.value)}>
-            <option value="morning">Morning</option>
-            <option value="afternoon">Afternoon</option>
-            <option value="evening">Evening</option>
-          </select>
+          <div className="fh-supp-time-checks">
+            {ALL_TIMES.map(t => (
+              <div key={t} className="fh-supp-time-check">
+                <input
+                  type="checkbox"
+                  id={`supp-time-${t}`}
+                  checked={fTimes.includes(t)}
+                  onChange={() => toggleTime(t)}
+                  disabled={disabled}
+                />
+                <label htmlFor={`supp-time-${t}`}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </label>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       <div className="fs-confirm-actions">
