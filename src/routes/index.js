@@ -13,6 +13,7 @@ import mealsRoutes from './meals.js';
 import sleepRoutes from './sleep.js';
 import activityRoutes from './activity.js';
 import checkinRoutes from './checkin.js';
+import workoutsRoutes from './workouts.js';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/meals', mealsRoutes);
 router.use('/sleep', sleepRoutes);
 router.use('/activity', activityRoutes);
 router.use('/checkin', checkinRoutes);
+router.use('/workouts', workoutsRoutes);
 
 export default router;

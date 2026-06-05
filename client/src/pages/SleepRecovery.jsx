@@ -212,11 +212,11 @@ function TrendChart({ slots, color, unit, label, metricName, minFloor, maxCeil }
             key={`ma-${i}`}
             d={d}
             fill="none"
-            stroke="white"
+            stroke="var(--text-muted)"
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
-            opacity={0.5}
+            opacity={0.7}
           />
         ))}
 

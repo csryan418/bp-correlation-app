@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Info } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import './Dashboard.css'
 
 function greeting() {
   const h = new Date().getHours()
-  if (h < 12) return 'Good morning.'
-  if (h < 17) return 'Good afternoon.'
-  return 'Good evening.'
+  if (h < 12) return 'Good morning, Caroline.'
+  if (h < 17) return 'Good afternoon, Caroline.'
+  return 'Good evening, Caroline.'
 }
 
 function formatToday() {
@@ -34,40 +36,41 @@ function diastolicStatus(val) {
   return 'red'
 }
 
-function parseTodayReadings(bpData) {
-  if (!Array.isArray(bpData)) return { morning: null, evening: null }
-  const today = localTodayStr()
-
-  // Pre-grouped shape: { date: "YYYY-MM-DD", morning: {...}, evening: {...} }
-  const grouped = bpData.find(r => String(r.date ?? '').slice(0, 10) === today)
-  if (grouped?.morning || grouped?.evening) {
-    return { morning: grouped.morning ?? null, evening: grouped.evening ?? null }
+function extractLast5Days(data) {
+  if (!Array.isArray(data)) return []
+  const map = {}
+  for (const r of data) {
+    const date = String(r.date ?? '').slice(0, 10)
+    if (!date) continue
+    if (!map[date]) map[date] = { date, morning: null, evening: null }
+    if (r.morning != null || r.evening != null) {
+      if (r.morning) map[date].morning = r.morning
+      if (r.evening) map[date].evening = r.evening
+      continue
+    }
+    if (r.systolic == null || r.diastolic == null) continue
+    const tod = (r.time_of_day ?? r.period ?? '').toLowerCase()
+    const reading = { systolic: r.systolic, diastolic: r.diastolic }
+    if (tod === 'morning') map[date].morning = reading
+    else if (tod === 'evening') map[date].evening = reading
   }
-
-  // Flat shape: individual rows with time_of_day / period field
-  const todayRows = bpData.filter(r => {
-    const d = String(r.date ?? r.recorded_at ?? r.timestamp ?? '').slice(0, 10)
-    return d === today
-  })
-  const morning = todayRows.find(r =>
-    (r.time_of_day ?? r.period ?? '').toLowerCase() === 'morning'
-  )
-  const evening = todayRows.find(r =>
-    (r.time_of_day ?? r.period ?? '').toLowerCase() === 'evening'
-  )
-  return { morning: morning ?? null, evening: evening ?? null }
+  return Object.values(map)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
 }
 
-// Handles multiple API response shapes; filters out rows where r/correlation is null
+function formatBPHistoryDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  })
+}
+
+// Top 2 correlations from the insightsFull response, already ranked by |r_diastolic|
 function extractInsights(data) {
-  let list = null
-  if (Array.isArray(data)) list = data
-  else if (Array.isArray(data?.insights)) list = data.insights
-  else if (Array.isArray(data?.correlations)) list = data.correlations
-  else if (Array.isArray(data?.data)) list = data.data
-  if (!list) return []
+  const list = Array.isArray(data?.correlations) ? data.correlations : []
   return list
-    .filter(i => i != null && (i.r != null || i.correlation != null))
+    .filter(c => c != null && c.r_diastolic != null && c.n >= 7)
     .slice(0, 2)
 }
 
@@ -166,8 +169,8 @@ function BPTrendChart({ readings }) {
   }
 
   const H = 160
-  const padLeft = 34
-  const padRight = 35
+  const padLeft = 6
+  const padRight = 6
   const padTop = 12
   const padBottom = 32
 
@@ -254,9 +257,9 @@ function BPTrendChart({ readings }) {
           />
         ))}
 
-        {/* X-axis labels */}
+        {/* X-axis labels — one per calendar date, at the first reading for that date */}
         {readings.map((r, i) => {
-          const period = (r.time_of_day || '').toLowerCase() === 'morning' ? 'AM' : 'PM'
+          if (i > 0 && readings[i - 1].date === r.date) return null
           const [, m, d] = r.date.split('-')
           const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'
           return (
@@ -267,7 +270,7 @@ function BPTrendChart({ readings }) {
               y={H - 4}
               textAnchor={anchor}
             >
-              {`${period} · ${parseInt(m)}/${parseInt(d)}`}
+              {`${parseInt(m)}/${parseInt(d)}`}
             </text>
           )
         })}
@@ -300,6 +303,7 @@ export default function Dashboard() {
   const [insights, setInsights] = useState({ data: null, loading: true, error: null })
   const [oura, setOura] = useState({ data: null, loading: true, error: null })
   const [activity, setActivity] = useState({ data: null, loading: true, error: null })
+  const [workout, setWorkout] = useState(null)
 
   useEffect(() => {
     api
@@ -308,7 +312,7 @@ export default function Dashboard() {
       .catch(err => setBp({ data: null, loading: false, error: err.message }))
 
     api
-      .insights()
+      .insightsFull()
       .then(data => setInsights({ data, loading: false, error: null }))
       .catch(err => setInsights({ data: null, loading: false, error: err.message }))
 
@@ -321,9 +325,13 @@ export default function Dashboard() {
       .activityYesterday()
       .then(data => setActivity({ data, loading: false, error: null }))
       .catch(err => setActivity({ data: null, loading: false, error: err.message }))
+
+    api
+      .workoutYesterday()
+      .then(data => setWorkout(data))
+      .catch(() => setWorkout(null))
   }, [])
 
-  const today = parseTodayReadings(bp.data)
   const topInsights = extractInsights(insights.data)
   const recovery = parseOura(oura.data)
   const activityStats = parseActivity(activity.data)
@@ -339,27 +347,23 @@ export default function Dashboard() {
       <div className="dashboard-grid">
         {/* Card 1 — Blood Pressure */}
         <section className="card bp-summary-card">
-          <h2 className="card-title">Today's Blood Pressure</h2>
-          <div className="bp-readings">
-            <BPReading label="Morning" reading={today.morning} loading={bp.loading} />
-            <BPReading label="Evening" reading={today.evening} loading={bp.loading} />
-          </div>
+          <h2 className="card-title">Recent Blood Pressure</h2>
           {!bp.loading && bp.error && (
             <p className="card-notice card-notice--error">Could not load readings</p>
           )}
-          {!bp.loading && !bp.error && !today.morning && !today.evening && (
-            <p className="card-notice">No readings logged yet today.</p>
-          )}
+          <BPHistoryList data={bp.data} loading={bp.loading} />
         </section>
 
         {/* Card 2 — Insights */}
         <section className="card insights-card">
           <h2 className="card-title">Correlation Insights</h2>
+          <p className="insights-bar-legend">Bar length = correlation strength · Red = raises BP · Green = lowers BP</p>
 
           {insights.loading && (
             <div className="insights-skeleton">
-              <div className="loading-skeleton" style={{ height: '4rem', marginBottom: '0.625rem' }} />
-              <div className="loading-skeleton" style={{ height: '4rem' }} />
+              <div className="loading-skeleton" style={{ height: '4.5rem', marginBottom: '0.5rem' }} />
+              <div className="loading-skeleton" style={{ height: '4.5rem', marginBottom: '0.5rem' }} />
+              <div className="loading-skeleton" style={{ height: '4.5rem' }} />
             </div>
           )}
 
@@ -367,9 +371,13 @@ export default function Dashboard() {
             <p className="card-notice">Insights will appear as more data is logged.</p>
           )}
 
-          {topInsights.map((insight, i) => (
-            <InsightRow key={i} insight={insight} />
+          {topInsights.map((corr, i) => (
+            <DashCorrelationRow key={i} corr={corr} />
           ))}
+
+          {!insights.loading && topInsights.length > 0 && (
+            <Link to="/insights" className="insights-view-all">View all insights →</Link>
+          )}
         </section>
 
         {/* Card 3 — Recovery */}
@@ -460,12 +468,20 @@ export default function Dashboard() {
                 unit="kcal"
                 missing="—"
               />
-              <RecoveryStat
-                label="Walking Distance"
-                value={activityStats.distMiles}
-                unit="mi"
-                missing="—"
-              />
+              <div className="recovery-stat">
+                <div className="recovery-stat-value-row">
+                  {workout
+                    ? <span className="recovery-stat-value">{Math.round(workout.total_duration_minutes)}m</span>
+                    : <span className="recovery-stat-missing">—</span>
+                  }
+                </div>
+                <span className="recovery-stat-label">TOTAL TOP WORKOUT</span>
+                {workout != null && (
+                  <span className="recovery-stat-unit" style={{ marginTop: '0.25rem', alignSelf: 'center' }}>
+                    {workout.workout_type} · {Math.round(workout.total_calories)} cal
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -500,72 +516,162 @@ export default function Dashboard() {
   )
 }
 
-function BPReading({ label, reading, loading }) {
+function BPHistoryList({ data, loading }) {
   if (loading) {
     return (
-      <div className="bp-reading">
-        <span className="bp-label">{label}</span>
-        <div
-          className="loading-skeleton"
-          style={{ height: '2.125rem', width: '6.25rem', marginTop: '0.625rem', borderRadius: '0.375rem' }}
-        />
+      <div className="bp-history-wrap">
+        <div className="loading-skeleton" style={{ flex: 1, borderRadius: '0.375rem', minHeight: '8rem' }} />
       </div>
     )
   }
 
-  if (!reading) {
+  const days = extractLast5Days(data)
+  const todayStr = localTodayStr()
+  const todayEntry = days.find(d => d.date === todayStr) ?? { morning: null, evening: null }
+  const reminder = !todayEntry.morning
+    ? 'Don\'t forget to log your morning BP'
+    : !todayEntry.evening
+      ? 'Don\'t forget to log your evening BP'
+      : null
+
+  if (!days.length) {
     return (
-      <div className="bp-reading bp-reading--empty">
-        <span className="bp-label">{label}</span>
-        <span className="bp-no-data">No reading</span>
-      </div>
+      <>
+        <p className="card-notice">No readings logged yet.</p>
+        {reminder && <p className="bp-log-reminder"><span aria-hidden="true">🔔</span>{reminder}</p>}
+      </>
     )
   }
-
-  const { systolic: sys, diastolic: dia } = reading
-  const status = diastolicStatus(dia)
 
   return (
-    <div className="bp-reading">
-      <span className="bp-label">{label}</span>
-      <span className={`bp-dot bp-dot--${status}`} />
-      <span className="bp-value">{sys}/{dia}</span>
-      <span className="bp-unit">mmHg</span>
-      <span className="bp-classification">
-        {dia < 80 ? 'Normal' : dia < 90 ? 'Elevated' : 'High'}
-      </span>
+    <div className="bp-history-wrap">
+      <div className="bp-history-list">
+        <div className="bp-history-header">
+          <span className="bp-history-cell bp-history-date-cell" />
+          <span className="bp-history-cell bp-history-col-label">Morning</span>
+          <span className="bp-history-cell bp-history-col-label">Evening</span>
+        </div>
+        {days.map(({ date, morning, evening }) => (
+          <div key={date} className="bp-history-row">
+            <span className="bp-history-cell bp-history-date-cell">
+              {formatBPHistoryDate(date)}
+            </span>
+            <span className={`bp-history-cell bp-history-reading${morning ? ` bp-history-reading--${diastolicStatus(morning.diastolic)}` : ''}`}>
+              {morning ? `${morning.systolic}/${morning.diastolic}` : '—'}
+            </span>
+            <span className={`bp-history-cell bp-history-reading${evening ? ` bp-history-reading--${diastolicStatus(evening.diastolic)}` : ''}`}>
+              {evening ? `${evening.systolic}/${evening.diastolic}` : '—'}
+            </span>
+          </div>
+        ))}
+      </div>
+      {reminder && <p className="bp-log-reminder"><span aria-hidden="true">🔔</span>{reminder}</p>}
+      <div className="bp-history-legend">
+        <span className="bp-history-legend-item">
+          <span className="bp-history-legend-dot bp-history-legend-dot--green" />
+          Under 80
+        </span>
+        <span className="bp-history-legend-item">
+          <span className="bp-history-legend-dot bp-history-legend-dot--amber" />
+          80–89
+        </span>
+        <span className="bp-history-legend-item">
+          <span className="bp-history-legend-dot bp-history-legend-dot--red" />
+          90+
+        </span>
+        <span className="bp-history-legend-note">Diastolic, mmHg</span>
+      </div>
     </div>
   )
 }
 
-function InsightRow({ insight }) {
-  const factor =
-    insight.label ||
-    insight.factor ||
-    insight.name ||
-    'Unknown factor'
-  const r = insight.r ?? insight.correlation
-  const direction = insight.direction || (r > 0 ? 'positive' : 'negative')
-  const description = insight.insight || insight.description || insight.summary || ''
-  const strength = typeof r === 'number' ? Math.abs(r) : null
+function InfoTooltip() {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const tooltipRef = useRef(null)
+  const leaveTimer = useRef(null)
+
+  const show = () => { clearTimeout(leaveTimer.current); setOpen(true) }
+  const hide = () => { leaveTimer.current = setTimeout(() => setOpen(false), 150) }
+
+  useEffect(() => {
+    if (!open) return
+    function close(e) {
+      if (!wrapRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  useEffect(() => () => clearTimeout(leaveTimer.current), [])
+
+  useLayoutEffect(() => {
+    if (!open || !tooltipRef.current) return
+    const el = tooltipRef.current
+    el.style.left = '0'
+    el.style.right = 'auto'
+    const { right } = el.getBoundingClientRect()
+    const overflow = right - (window.innerWidth - 8)
+    if (overflow > 0) {
+      el.style.left = `-${overflow}px`
+    }
+  }, [open])
+
+  return (
+    <span className="nak-info-wrap" ref={wrapRef} onMouseEnter={show} onMouseLeave={hide}>
+      <button
+        type="button"
+        className="nak-info-btn"
+        aria-label="About the sodium:potassium ratio"
+        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
+      >
+        <Info size={14} />
+      </button>
+      {open && (
+        <div className="nak-info-tooltip" ref={tooltipRef} role="tooltip" onMouseEnter={show} onMouseLeave={hide}>
+          <p className="nak-info-label">What it is</p>
+          <p className="nak-info-body">Your daily sodium intake divided by your daily potassium intake.</p>
+          <p className="nak-info-label">Target</p>
+          <p className="nak-info-body">Below 1.0 means you're eating more potassium than sodium — the goal. A ratio closer to 1:2 (sodium:potassium) is often cited as ideal.</p>
+          <p className="nak-info-label">Why it matters</p>
+          <p className="nak-info-body">A high ratio is associated with elevated blood pressure. Most Western diets are well above 1.0.</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
+function DashCorrelationRow({ corr }) {
+  const { variable, r_diastolic, n } = corr
+  const absR = Math.abs(r_diastolic)
+  const direction = r_diastolic > 0.05 ? 'positive' : r_diastolic < -0.05 ? 'negative' : 'neutral'
+  const barColor = direction === 'negative' ? 'var(--green)' : direction === 'positive' ? 'var(--red)' : 'var(--text-muted)'
+  const rClass = absR >= 0.4 ? 'insight-r--strong' : absR >= 0.2 ? 'insight-r--moderate' : 'insight-r--weak'
+  const rLabel = (r_diastolic > 0 ? '+' : '') + r_diastolic.toFixed(2)
 
   return (
     <div className="insight-row">
       <div className="insight-header">
-        <span className="insight-factor">{factor}</span>
-        <span className={`insight-tag insight-tag--${direction}`}>
-          {direction === 'positive' ? '↑ raises BP' : '↓ lowers BP'}
+        <span className="insight-factor">
+          {variable}
+          {variable === 'Sodium:Potassium Ratio' && <InfoTooltip />}
         </span>
+        {direction !== 'neutral' && (
+          <span className={`insight-tag insight-tag--${direction}`}>
+            {direction === 'positive' ? '↑ raises BP' : '↓ lowers BP'}
+          </span>
+        )}
       </div>
-      {strength != null && (
-        <div className="insight-bar-track">
-          <div
-            className={`insight-bar insight-bar--${direction}`}
-            style={{ width: `${Math.round(strength * 100)}%` }}
-          />
-        </div>
-      )}
-      {description && <p className="insight-desc">{description}</p>}
+      <div className="insight-r-row">
+        <span className={`insight-r-badge ${rClass}`}>DIA r = {rLabel}</span>
+        <span className="insight-n">{n} paired days</span>
+      </div>
+      <div className="insight-bar-track">
+        <div
+          className="insight-bar"
+          style={{ width: `${Math.round(absR * 100)}%`, background: barColor }}
+        />
+      </div>
     </div>
   )
 }

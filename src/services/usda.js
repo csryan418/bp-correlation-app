@@ -3,14 +3,22 @@ import axios from 'axios';
 const BASE_URL = 'https://api.nal.usda.gov/fdc/v1';
 const OFF_BASE_URL = 'https://world.openfoodfacts.org';
 
+// OpenFoodFacts stores minerals in g/100g, so we multiply by 1000 to get mg.
+// However, some OFF products have values entered in mg instead of g (data quality issue).
+// Any value > 10 g/100g is physiologically impossible for Na/K/Mg, so treat it as already in mg.
+function offGramsToMg(valPer100g) {
+  if (valPer100g == null) return null;
+  return valPer100g > 10 ? Math.round(valPer100g) : Math.round(valPer100g * 1000);
+}
+
 function normalizeOffProduct(product) {
   const n = product.nutriments ?? {};
   return {
     fdcId: `off_${product.code}`,
     description: product.product_name || 'Unknown product',
-    sodium_mg:    n.sodium_100g    != null ? n.sodium_100g    * 1000 : null,
-    potassium_mg: n.potassium_100g != null ? n.potassium_100g * 1000 : null,
-    magnesium_mg: n.magnesium_100g != null ? n.magnesium_100g * 1000 : null,
+    sodium_mg:    offGramsToMg(n.sodium_100g),
+    potassium_mg: offGramsToMg(n.potassium_100g),
+    magnesium_mg: offGramsToMg(n.magnesium_100g),
     source: 'openfoodfacts',
   };
 }
@@ -48,9 +56,9 @@ export async function getOpenFoodFactsPortions(offId) {
   portions.push({ label: '100g', grams: 100 });
 
   const basePer100g = {
-    sodium_mg:    n.sodium_100g    != null ? n.sodium_100g    * 1000 : null,
-    potassium_mg: n.potassium_100g != null ? n.potassium_100g * 1000 : null,
-    magnesium_mg: n.magnesium_100g != null ? n.magnesium_100g * 1000 : null,
+    sodium_mg:    offGramsToMg(n.sodium_100g),
+    potassium_mg: offGramsToMg(n.potassium_100g),
+    magnesium_mg: offGramsToMg(n.magnesium_100g),
   };
 
   return { portions, basePer100g, isBeverage: false };

@@ -121,7 +121,7 @@ export function list(req, res) {
 }
 
 export function copyMeal(req, res) {
-  const { source_date, meal_type, target_date } = req.body;
+  const { source_date, meal_type, target_date, target_meal_type } = req.body;
   if (!source_date || !meal_type || !target_date) {
     return res.status(400).json({ error: 'source_date, meal_type, and target_date are required' });
   }
@@ -132,6 +132,7 @@ export function copyMeal(req, res) {
 
   if (rows.length === 0) return res.json([]);
 
+  const destMealType = target_meal_type || meal_type;
   const loggedTime = new Date().toISOString();
   const newMealId = Date.now();
   const insertStmt = db.prepare(
@@ -143,7 +144,7 @@ export function copyMeal(req, res) {
   const created = db.transaction(() =>
     rows.map(r => {
       const result = insertStmt.run(
-        target_date, r.meal_type, newMealId, loggedTime,
+        target_date, destMealType, newMealId, loggedTime,
         r.food_name, r.serving_size, r.fdc_id,
         r.sodium_mg, r.potassium_mg, r.magnesium_mg, r.calories
       );

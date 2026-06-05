@@ -29,6 +29,8 @@
   --amber-dim: rgba(212, 151, 58, 0.15);
   --red: #c44b4b;
   --red-dim: rgba(196, 75, 75, 0.15);
+  --blue: #85aae8;
+  --blue-dim: rgba(100, 140, 220, 0.12);
 
   /* Layout */
   --sidebar-width: 15rem;
@@ -66,6 +68,8 @@
   --amber-dim: rgba(160, 107, 20, 0.12);
   --red: #b02828;
   --red-dim: rgba(176, 40, 40, 0.1);
+  --blue: #2c5cbf;
+  --blue-dim: rgba(44, 92, 191, 0.10);
 
   --shadow-card: 0 1px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0,0,0,0.04);
 }

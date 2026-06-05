@@ -6,7 +6,7 @@ import './Sidebar.css'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
   { to: '/blood-pressure', label: 'Blood Pressure' },
-  { to: '/food-hydration', label: 'Food & Hydration' },
+  { to: '/food-hydration', label: 'Daily Intake' },
   { to: '/sleep-recovery', label: 'Sleep & Recovery' },
   { to: '/insights', label: 'Insights' },
 ]

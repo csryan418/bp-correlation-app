@@ -241,7 +241,10 @@
   position: fixed;
   top: 0;
   left: 0;
+  /* 100dvh adjusts for mobile browser chrome (address bar) so the drawer
+     never exceeds the actual visible viewport height */
   height: 100vh;
+  height: 100dvh;
   width: 80%;
   max-width: 20rem;
   background: var(--bg-surface);
@@ -249,9 +252,22 @@
   transform: translateX(-100%);
   transition: transform 0.25s ease;
   z-index: 300;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* Nav takes remaining height and scrolls if items overflow */
+.mobile-drawer .sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Theme toggle and status are pinned to the bottom, never scroll out of view */
+.mobile-drawer .sidebar-theme,
+.mobile-drawer .sidebar-status {
+  flex-shrink: 0;
 }
 
 .mobile-drawer--open {

@@ -60,6 +60,14 @@
   flex-shrink: 0;
 }
 
+.insights-bar-legend {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  margin: 0 0 1.25rem;
+}
+
 .card-notice {
   font-size: 0.8125rem;
   color: var(--text-muted);
@@ -72,94 +80,112 @@
   font-style: normal;
 }
 
-/* ── BP Summary ── */
-.bp-readings {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* ── BP History List ── */
+.bp-history-wrap {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   gap: 0;
 }
 
-.bp-reading {
-  container-type: inline-size;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: 0 0.75rem 0 0;
-}
-
-.bp-reading:last-child {
-  overflow: visible;
-  padding: 0 0 0 0.75rem;
-  border-left: 1px solid var(--border-subtle);
-}
-
-.bp-reading--empty .bp-no-data {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  font-style: italic;
-  white-space: nowrap;
-  overflow: visible;
+.bp-history-list {
   flex: 1;
-  display: flex;
+}
+
+.bp-history-header,
+.bp-history-row {
+  display: grid;
+  grid-template-columns: 1fr 5rem 5rem;
+  padding: 0.4375rem 0;
+  border-bottom: 1px solid var(--border-subtle);
   align-items: center;
 }
 
-.bp-label {
+.bp-history-header {
+  padding-top: 0;
+}
+
+.bp-history-row:last-child {
+  border-bottom: none;
+}
+
+.bp-history-cell {
+  font-size: 0.8125rem;
+}
+
+.bp-history-date-cell {
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.bp-history-col-label {
   font-size: 0.625rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
   font-weight: 600;
-  margin-bottom: 0.75rem;
-  flex-shrink: 0;
+  text-align: right;
 }
 
-.bp-dot {
-  width: 0.75rem;
-  height: 0.75rem;
+.bp-history-reading {
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  text-align: right;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+.bp-history-reading--green { color: var(--green); }
+.bp-history-reading--amber { color: var(--amber); }
+.bp-history-reading--red   { color: var(--red);   }
+
+.bp-log-reminder {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: var(--accent-mid);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-sm);
+  padding: 0.4375rem 0.75rem;
+  margin-top: 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+.bp-history-legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.875rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.bp-history-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.bp-history-legend-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-bottom: 0.5rem;
 }
 
-.bp-dot--green {
-  background: var(--green);
-}
-.bp-dot--amber {
-  background: var(--amber);
-}
-.bp-dot--red {
-  background: var(--red);
-}
+.bp-history-legend-dot--green { background: var(--green); }
+.bp-history-legend-dot--amber { background: var(--amber); }
+.bp-history-legend-dot--red   { background: var(--red);   }
 
-.bp-value {
-  font-family: var(--font-heading);
-  font-size: clamp(2rem, 3.5vw, 3.5rem);
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-@supports (font-size: 1cqw) {
-  .bp-value {
-    font-size: clamp(2rem, 4cqw, 3.5rem);
-  }
-}
-
-.bp-unit {
+.bp-history-legend-note {
   font-size: 0.6875rem;
   color: var(--text-muted);
-  letter-spacing: 0.04em;
-  margin-top: 0.375rem;
-}
-
-.bp-classification {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  margin-top: 0.25rem;
+  margin-left: auto;
 }
 
 /* ── Insights ── */
@@ -245,10 +271,55 @@
   background: var(--green);
 }
 
-.insight-desc {
+.insight-r-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.insight-r-badge {
+  font-size: 0.8125rem;
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 0.25rem;
+}
+
+.insight-r--strong {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.insight-r--moderate {
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.insight-r--weak {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.insight-n {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.insights-view-all {
+  display: block;
+  margin-top: auto;
+  padding-top: 1rem;
   font-size: 0.75rem;
   color: var(--text-secondary);
-  line-height: 1.55;
+  text-decoration: none;
+  text-align: right;
+  letter-spacing: 0.01em;
+}
+
+.insights-view-all:hover {
+  color: var(--text-primary);
 }
 
 /* ── Recovery ── */
@@ -336,8 +407,9 @@
 /* ── BP trend card header ── */
 .sparkline-card-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
   margin-bottom: 1.75rem;
 }
 
@@ -459,6 +531,78 @@
   font-size: 0.625rem;
   color: var(--text-muted);
   letter-spacing: 0.04em;
+}
+
+/* ── Na:K ratio info tooltip ─────────────────────────────────── */
+
+.nak-info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 0.3em;
+}
+
+.nak-info-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.7;
+  flex-shrink: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.nak-info-btn:hover,
+.nak-info-btn:focus-visible {
+  opacity: 1;
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.nak-info-tooltip {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  z-index: 100;
+  width: 16rem;
+  max-width: 280px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-warm);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.875rem;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 300;
+}
+
+.nak-info-label {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0.25rem;
+  font-family: var(--font-body);
+}
+
+.nak-info-label:first-child {
+  margin-top: 0;
+}
+
+.nak-info-body {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* ── Mobile breakpoints ── */

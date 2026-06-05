@@ -100,15 +100,6 @@ export function getCorrelations(req, res) {
     ouraRows.filter(r => r.hrv_average != null).map(r => [r.date, r.hrv_average])
   );
 
-  // --- Active energy: previous day's kcal vs current day's BP (1-day lag) ---
-  // Shift each energy date forward by 1 day so it pairs with the next day's BP reading.
-  const energyRows = db.prepare(`
-    SELECT date(date, '+1 day') AS bp_date, active_energy_kcal
-    FROM daily_summary
-    WHERE date >= date('now', '-31 days') AND active_energy_kcal IS NOT NULL
-  `).all();
-  const activeEnergyMap = new Map(energyRows.map(r => [r.bp_date, r.active_energy_kcal]));
-
   // --- Oura active calories: previous day vs current day's BP (1-day lag) ---
   const ouraCalorieRows = db.prepare(`
     SELECT date(date, '+1 day') AS bp_date, active_calories
@@ -142,12 +133,6 @@ export function getCorrelations(req, res) {
       label: 'HRV (heart rate variability)',
       dataMap: hrvMap,
       direction: { positive: 'Higher HRV' },
-    },
-    {
-      key: 'active_energy',
-      label: 'Daily active energy (kcal)',
-      dataMap: activeEnergyMap,
-      direction: { positive: 'More active energy burned' },
     },
     {
       key: 'oura_active_calories',
@@ -341,6 +326,32 @@ export function getFullInsights(req, res) {
   const stepsMap         = new Map(actRows.filter(r => r.steps           != null).map(r => [r.date, r.steps]));
   const activityScoreMap = new Map(actRows.filter(r => r.activity_score  != null).map(r => [r.date, r.activity_score]));
 
+  // ── Workouts ─────────────────────────────────────────────────
+  // Per date: group by workout_type, pick the type with highest total calories.
+  const workoutTypeRows = db.prepare(`
+    SELECT
+      date(start_time)          AS date,
+      workout_type,
+      SUM(duration_minutes)     AS total_duration,
+      SUM(calories)             AS total_calories
+    FROM workouts
+    WHERE calories IS NOT NULL
+    GROUP BY date(start_time), workout_type
+  `).all();
+  const workoutByDate = new Map();
+  for (const row of workoutTypeRows) {
+    const existing = workoutByDate.get(row.date);
+    if (!existing || row.total_calories > existing.total_calories) {
+      workoutByDate.set(row.date, row);
+    }
+  }
+  const workoutDurationMap = new Map(
+    [...workoutByDate.entries()].map(([date, row]) => [date, row.total_duration])
+  );
+  const workoutCaloriesMap = new Map(
+    [...workoutByDate.entries()].map(([date, row]) => [date, row.total_calories])
+  );
+
   // ── Hydration ────────────────────────────────────────────────
   const hydrationRows = db.prepare(`
     SELECT date, SUM(water_oz) AS total_oz FROM hydration_log GROUP BY date
@@ -376,8 +387,10 @@ export function getFullInsights(req, res) {
     calcCorr(sodiumMap,     'Daily Sodium',             'mg'),
     calcCorr(potassiumMap,  'Daily Potassium',          'mg'),
     calcCorr(magnesiumMap,  'Daily Magnesium',          'mg'),
-    calcCorr(nakMap,        'Sodium:Potassium Ratio',   ':1'),
-    calcCorr(hydrationMap,  'Daily Water Intake',       'oz'),
+    calcCorr(nakMap,              'Sodium:Potassium Ratio',   ':1'),
+    calcCorr(hydrationMap,        'Daily Water Intake',       'oz'),
+    calcCorr(workoutDurationMap,  'Top Workout Duration',     'min'),
+    calcCorr(workoutCaloriesMap,  'Top Workout Calories',     'kcal'),
   ];
   correlations.sort((a, b) => {
     const absA = a.r_diastolic != null ? Math.abs(a.r_diastolic) : -1;
@@ -604,8 +617,10 @@ export function getFullInsights(req, res) {
       hrv:            buildScatter(hrvMap),
       deepSleep:      buildScatter(deepMap),
       readiness:      buildScatter(readinessMap),
-      activeCalories: buildScatter(activeCalMap),
-      activityScore:  buildScatter(activityScoreMap),
+      activeCalories:  buildScatter(activeCalMap),
+      activityScore:   buildScatter(activityScoreMap),
+      workoutDuration: buildScatter(workoutDurationMap),
+      workoutCalories: buildScatter(workoutCaloriesMap),
     },
     hydrationInsight,
     supplementCorrelations,

@@ -58,12 +58,17 @@ export default function FoodHydration() {
     <div className="fh-page">
       <header className="page-header fh-page-header">
         <div>
-          <h1 className="page-title">Food & Hydration</h1>
+          <h1 className="page-title">Daily Intake</h1>
           <p className="page-subtitle">Log today's food, water intake, and supplements.</p>
         </div>
         <div className="fh-page-date-nav">
           <button className="fh-date-nav-btn" onClick={() => navigateDate(-1)} aria-label="Previous day">‹</button>
-          <span className="fh-page-date-text">{isToday ? 'Today' : formatLogDate(selectedDate)}</span>
+          <button
+            className="fh-today-btn"
+            onClick={() => setSelectedDate(today)}
+            disabled={isToday}
+            aria-label="Go to today"
+          >Today</button>
           <input
             className="fh-date-input text-input"
             type="date"
@@ -115,7 +120,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [loggingMeal, setLoggingMeal] = useState(false)
 
   // Toast & log
-  const [toast, setToast] = useState(false)
+  const [toast, setToast] = useState(null)
   const [todayLog, setTodayLog] = useState([])
   const [collapsedMeals, setCollapsedMeals] = useState(new Set())
 
@@ -134,6 +139,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [editSodiumBase, setEditSodiumBase] = useState(null)
   const [editPotassiumBase, setEditPotassiumBase] = useState(null)
   const [editMagnesiumBase, setEditMagnesiumBase] = useState(null)
+  const [editNutrientsEdited, setEditNutrientsEdited] = useState(false)
 
   // Manual entry
   const [showManual, setShowManual] = useState(false)
@@ -146,6 +152,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
   // Copy to today
   const [copyConfirmMeal, setCopyConfirmMeal] = useState(null)
+  const [copyMealType, setCopyMealType] = useState(null)
   const [copySuccessMeal, setCopySuccessMeal] = useState(null)
   const copySuccessRef = useRef(null)
 
@@ -161,6 +168,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const [deletedItemIds, setDeletedItemIds] = useState([])
   const [mealSaving, setMealSaving] = useState(false)
   const [replacingItemKey, setReplacingItemKey] = useState(null)
+  const [mealEditActiveTile, setMealEditActiveTile] = useState(null)
+  const [mealEditDraftValue, setMealEditDraftValue] = useState('')
 
   // Save as Meal (from basket)
   const [showSaveMeal, setShowSaveMeal] = useState(false)
@@ -208,10 +217,10 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     } catch { }
   }
 
-  function showToast() {
+  function showToast(message = '✓ Logged!') {
     clearTimeout(toastRef.current)
-    setToast(true)
-    toastRef.current = setTimeout(() => setToast(false), 2500)
+    setToast(message)
+    toastRef.current = setTimeout(() => setToast(null), 2500)
   }
 
   useEffect(() => {
@@ -558,6 +567,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setEditSodium(String(Math.round(entry.sodium_mg    || 0)))
     setEditPotassium(String(Math.round(entry.potassium_mg || 0)))
     setEditMagnesium(String(Math.round(entry.magnesium_mg || 0)))
+    setEditNutrientsEdited(false)
     async function loadPortions(fdcId) {
       const data = await api.getFoodPortions(fdcId)
       const portionList = dedupePortions(data.portions ?? [])
@@ -588,7 +598,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setEditSaving(true)
     try {
       let sodium, potassium, magnesium
-      if (editPortions.length > 0 && editBasePer100g) {
+      if (editPortions.length > 0 && editBasePer100g && !editNutrientsEdited) {
         const grams = editPortions[editPortionIdx]?.grams ?? 100
         sodium    = calcMineral(editBasePer100g.sodium_mg,    grams, editQuantity)
         potassium = calcMineral(editBasePer100g.potassium_mg, grams, editQuantity)
@@ -676,7 +686,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     }
   }
 
-  async function handleLoadMeal(mealId) {
+  async function handleLoadMeal(mealId, mealName) {
     try {
       const data = await api.loadMeal(mealId)
       const items = (data.items ?? []).map(item => ({
@@ -689,7 +699,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
         quantity: item.serving_size ?? 1,
         portionLabel: item.serving_unit ?? '1 srv',
       }))
-      setBasket(items)
+      setBasket(prev => [...prev, ...items])
+      showToast(`${mealName} added to basket`)
     } catch { }
   }
 
@@ -719,6 +730,24 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setEditingItems([])
     setDeletedItemIds([])
     setReplacingItemKey(null)
+    setMealEditActiveTile(null)
+    setMealEditDraftValue('')
+  }
+
+  function commitMealItemMineral(key, mineral, draftValue) {
+    if (draftValue === '') return
+    const parsed = parseFloat(draftValue)
+    if (isNaN(parsed)) return
+    setEditingItems(prev => prev.map(i => {
+      if (i._key !== key) return i
+      const flat = i._perUnit ? {
+        sodium:    i._perUnit.sodium    != null ? Math.round(i._perUnit.sodium    * i.serving_size) : i.sodium,
+        potassium: i._perUnit.potassium != null ? Math.round(i._perUnit.potassium * i.serving_size) : i.potassium,
+        magnesium: i._perUnit.magnesium != null ? Math.round(i._perUnit.magnesium * i.serving_size) : i.magnesium,
+      } : { sodium: i.sodium, potassium: i.potassium, magnesium: i.magnesium }
+      return { ...i, ...flat, [mineral]: parsed, _perUnit: null }
+    }))
+    setMealEditActiveTile(null)
   }
 
   function updateEditItemQty(key, val) {
@@ -795,11 +824,11 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     }
   }
 
-  async function handleCopyMeal(mt) {
+  async function handleCopyMeal(sourceMt, targetMt) {
     setCopyConfirmMeal(null)
     try {
-      await api.copyMeal(selectedDate, mt, today)
-      setCopySuccessMeal(mt)
+      await api.copyMeal(selectedDate, sourceMt, today, targetMt)
+      setCopySuccessMeal(sourceMt)
       clearTimeout(copySuccessRef.current)
       copySuccessRef.current = setTimeout(() => setCopySuccessMeal(null), 2500)
     } catch { }
@@ -844,6 +873,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     editMagnesium, setEditMagnesium,
     editComputedSodium, editComputedPotassium, editComputedMagnesium,
     editIsBeverage,
+    editNutrientsEdited, onSetEditNutrientsEdited: setEditNutrientsEdited,
     onEditManualQtyChange: handleEditManualQtyChange,
     editSaving, onEdit: openEdit, onEditSave: handleEditSave,
     onCancelEdit: () => setEditingId(null), onDelete: handleDelete,
@@ -1223,19 +1253,26 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                         </div>
                       </div>
                       {!isToday && (
-                        <div className="fh-meal-group-copy-row" onClick={e => e.stopPropagation()}>
+                        <div className={`fh-meal-group-copy-row${copyConfirmMeal === mt ? ' fh-meal-group-copy-row--confirm' : ''}`} onClick={e => e.stopPropagation()}>
                           {copySuccessMeal === mt ? (
                             <span className="fh-copy-success">{mt} copied to today</span>
                           ) : copyConfirmMeal === mt ? (
                             <>
-                              <span className="fh-copy-confirm-msg">Copy {mt} to today?</span>
-                              <button className="fh-copy-confirm-yes" onClick={() => handleCopyMeal(mt)}>Yes, copy</button>
+                              <span className="fh-copy-confirm-msg">Log as:</span>
+                              {MEAL_TYPES.map(type => (
+                                <button
+                                  key={type}
+                                  className={`fh-meal-tab fh-meal-tab--sm${copyMealType === type ? ' fh-meal-tab--active' : ''}`}
+                                  onClick={e => { e.stopPropagation(); setCopyMealType(type) }}
+                                >{type}</button>
+                              ))}
+                              <button className="fh-copy-confirm-yes" onClick={() => handleCopyMeal(mt, copyMealType)}>Yes, copy</button>
                               <button className="fh-copy-confirm-cancel" onClick={() => setCopyConfirmMeal(null)}>Cancel</button>
                             </>
                           ) : (
                             <button
                               className="fh-copy-btn"
-                              onClick={e => { e.stopPropagation(); setCopyConfirmMeal(mt) }}
+                              onClick={e => { e.stopPropagation(); setCopyConfirmMeal(mt); setCopyMealType(mt) }}
                               aria-label={`Copy ${mt} to today`}
                             >Copy to Today</button>
                           )}
@@ -1309,8 +1346,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                         </div>
                         <div className="fh-my-meal-actions">
                           {!isEditing && (
-                            <button className="btn-primary fh-relog-btn" onClick={() => handleLoadMeal(meal.id)}>
-                              Add to Log
+                            <button className="btn-primary fh-relog-btn" onClick={() => handleLoadMeal(meal.id, meal.name)}>
+                              Add to Basket
                             </button>
                           )}
                           <div className="fs-log-entry-actions">
@@ -1353,16 +1390,36 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                                     />
                                     <span className="fh-meal-edit-unit">{item.serving_unit}</span>
                                   </div>
-                                  <div className="fh-meal-edit-nutrients">
-                                    {item._perUnit ? (
-                                      <>Na {item._perUnit.sodium    != null ? Math.round(item._perUnit.sodium    * item.serving_size) : '—'}mg
-                                      {' · '}K {item._perUnit.potassium != null ? Math.round(item._perUnit.potassium * item.serving_size) : '—'}mg
-                                      {' · '}Mg {item._perUnit.magnesium != null ? Math.round(item._perUnit.magnesium * item.serving_size) : '—'}mg</>
-                                    ) : (
-                                      <>Na {item.sodium    != null ? Math.round(item.sodium)    : '—'}mg
-                                      {' · '}K {item.potassium != null ? Math.round(item.potassium) : '—'}mg
-                                      {' · '}Mg {item.magnesium != null ? Math.round(item.magnesium) : '—'}mg</>
-                                    )}
+                                  <div className="fs-computed fh-meal-edit-minerals">
+                                    {(() => {
+                                      const dispSodium    = item._perUnit ? (item._perUnit.sodium    != null ? Math.round(item._perUnit.sodium    * item.serving_size) : null) : item.sodium
+                                      const dispPotassium = item._perUnit ? (item._perUnit.potassium != null ? Math.round(item._perUnit.potassium * item.serving_size) : null) : item.potassium
+                                      const dispMagnesium = item._perUnit ? (item._perUnit.magnesium != null ? Math.round(item._perUnit.magnesium * item.serving_size) : null) : item.magnesium
+                                      const isActive = mineral => mealEditActiveTile?.key === item._key && mealEditActiveTile?.mineral === mineral
+                                      return (<>
+                                        <ComputedMineral label="Sodium"    value={dispSodium}
+                                          editing={isActive('sodium')}
+                                          draftValue={mealEditDraftValue}
+                                          onClickEdit={() => { setMealEditActiveTile({ key: item._key, mineral: 'sodium' });    setMealEditDraftValue(dispSodium    != null ? String(dispSodium)    : '') }}
+                                          onDraftChange={v => setMealEditDraftValue(v)}
+                                          onCommit={() => commitMealItemMineral(item._key, 'sodium',    mealEditDraftValue)}
+                                        />
+                                        <ComputedMineral label="Potassium" value={dispPotassium}
+                                          editing={isActive('potassium')}
+                                          draftValue={mealEditDraftValue}
+                                          onClickEdit={() => { setMealEditActiveTile({ key: item._key, mineral: 'potassium' }); setMealEditDraftValue(dispPotassium != null ? String(dispPotassium) : '') }}
+                                          onDraftChange={v => setMealEditDraftValue(v)}
+                                          onCommit={() => commitMealItemMineral(item._key, 'potassium', mealEditDraftValue)}
+                                        />
+                                        <ComputedMineral label="Magnesium" value={dispMagnesium}
+                                          editing={isActive('magnesium')}
+                                          draftValue={mealEditDraftValue}
+                                          onClickEdit={() => { setMealEditActiveTile({ key: item._key, mineral: 'magnesium' }); setMealEditDraftValue(dispMagnesium != null ? String(dispMagnesium) : '') }}
+                                          onDraftChange={v => setMealEditDraftValue(v)}
+                                          onCommit={() => commitMealItemMineral(item._key, 'magnesium', mealEditDraftValue)}
+                                        />
+                                      </>)
+                                    })()}
                                   </div>
                                 </div>
                                 <div className="fh-meal-edit-item-actions">
@@ -1443,7 +1500,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
         <SupplementsSection selectedDate={selectedDate} />
       </aside>
 
-      <div className={`fs-toast${toast ? ' fs-toast--visible' : ''}`}>✓ Logged!</div>
+      <div className={`fs-toast${toast ? ' fs-toast--visible' : ''}`}>{toast}</div>
     </div>
   )
 }
@@ -2086,10 +2143,17 @@ function LogEntry({
   editMagnesium, setEditMagnesium,
   editComputedSodium, editComputedPotassium, editComputedMagnesium,
   editIsBeverage,
+  editNutrientsEdited, onSetEditNutrientsEdited,
   onEditManualQtyChange,
   editSaving, onEdit, onEditSave, onCancelEdit, onDelete,
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [editActiveTile, setEditActiveTile] = useState(null)
+  const [editDraftValue, setEditDraftValue] = useState('')
+
+  const effSodium    = editNutrientsEdited && editSodium    !== '' ? parseFloat(editSodium)    : (editBasePer100g ? editComputedSodium    : (parseFloat(editSodium)    || null))
+  const effPotassium = editNutrientsEdited && editPotassium !== '' ? parseFloat(editPotassium) : (editBasePer100g ? editComputedPotassium : (parseFloat(editPotassium) || null))
+  const effMagnesium = editNutrientsEdited && editMagnesium !== '' ? parseFloat(editMagnesium) : (editBasePer100g ? editComputedMagnesium : (parseFloat(editMagnesium) || null))
   return (
     <li className={`fs-log-entry${editingId === entry.id ? ' fs-log-entry--editing' : ''}`}>
       <div className="fs-log-entry-row">
@@ -2148,9 +2212,30 @@ function LogEntry({
                 </select>
               </div>
               <div className="fs-computed">
-                <ComputedMineral label="Sodium"    value={editBasePer100g ? editComputedSodium    : (parseFloat(editSodium)    || null)} />
-                <ComputedMineral label="Potassium" value={editBasePer100g ? editComputedPotassium : (parseFloat(editPotassium) || null)} />
-                <ComputedMineral label="Magnesium" value={editBasePer100g ? editComputedMagnesium : (parseFloat(editMagnesium) || null)} />
+                <ComputedMineral label="Sodium"    value={effSodium}
+                  edited={editNutrientsEdited && editSodium !== ''}
+                  editing={editActiveTile === 'sodium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('sodium');    setEditDraftValue(effSodium    != null ? String(Math.round(effSodium))    : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditSodium(editDraftValue);    if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+                />
+                <ComputedMineral label="Potassium" value={effPotassium}
+                  edited={editNutrientsEdited && editPotassium !== ''}
+                  editing={editActiveTile === 'potassium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('potassium'); setEditDraftValue(effPotassium != null ? String(Math.round(effPotassium)) : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditPotassium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+                />
+                <ComputedMineral label="Magnesium" value={effMagnesium}
+                  edited={editNutrientsEdited && editMagnesium !== ''}
+                  editing={editActiveTile === 'magnesium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('magnesium'); setEditDraftValue(effMagnesium != null ? String(Math.round(effMagnesium)) : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditMagnesium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+                />
               </div>
             </>
           ) : (
@@ -2164,9 +2249,27 @@ function LogEntry({
                   onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
               </div>
               <div className="fs-computed">
-                <ComputedMineral label="Sodium"    value={parseFloat(editSodium)    || null} />
-                <ComputedMineral label="Potassium" value={parseFloat(editPotassium) || null} />
-                <ComputedMineral label="Magnesium" value={parseFloat(editMagnesium) || null} />
+                <ComputedMineral label="Sodium"    value={effSodium}
+                  editing={editActiveTile === 'sodium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('sodium');    setEditDraftValue(effSodium    != null ? String(Math.round(effSodium))    : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditSodium(editDraftValue);    setEditActiveTile(null) }}
+                />
+                <ComputedMineral label="Potassium" value={effPotassium}
+                  editing={editActiveTile === 'potassium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('potassium'); setEditDraftValue(effPotassium != null ? String(Math.round(effPotassium)) : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditPotassium(editDraftValue); setEditActiveTile(null) }}
+                />
+                <ComputedMineral label="Magnesium" value={effMagnesium}
+                  editing={editActiveTile === 'magnesium'}
+                  draftValue={editDraftValue}
+                  onClickEdit={() => { setEditActiveTile('magnesium'); setEditDraftValue(effMagnesium != null ? String(Math.round(effMagnesium)) : '') }}
+                  onDraftChange={v => setEditDraftValue(v)}
+                  onCommit={() => { setEditMagnesium(editDraftValue); setEditActiveTile(null) }}
+                />
               </div>
             </>
           )}
@@ -2307,7 +2410,7 @@ function SupplementsSection({ selectedDate }) {
     <section className="fh-saved-section">
       <div className="fh-saved-header">
         <div className="fh-supp-header-left">
-          <span className="fh-saved-title">Supplements</span>
+          <span className="fh-saved-title">Medications & Supplements</span>
           {items.length > 0 && (
             <span className="fh-supp-adherence">{takenCount}/{items.length}</span>
           )}

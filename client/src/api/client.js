@@ -33,8 +33,8 @@ export const api = {
   updateFoodLog: (id, data) =>
     request(`/food/log/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFoodLog: (id) => request(`/food/log/${id}`, { method: 'DELETE' }),
-  copyMeal: (source_date, meal_type, target_date) =>
-    request('/food/copy-meal', { method: 'POST', body: JSON.stringify({ source_date, meal_type, target_date }) }),
+  copyMeal: (source_date, meal_type, target_date, target_meal_type) =>
+    request('/food/copy-meal', { method: 'POST', body: JSON.stringify({ source_date, meal_type, target_date, target_meal_type }) }),
   logHydration: (oz, date) =>
     request('/hydration', {
       method: 'POST',
@@ -72,6 +72,7 @@ export const api = {
   sleepTrends: () => request('/sleep/trends'),
   sleepHrvInsights: () => request('/sleep/hrv-insights'),
   activityYesterday: () => request('/activity/yesterday'),
+  workoutYesterday: () => request('/workouts/yesterday'),
   getCheckinToday: () => request('/checkin/today'),
   saveCheckin: (data) =>
     request('/checkin', { method: 'POST', body: JSON.stringify(data) }),

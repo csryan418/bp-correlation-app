@@ -1,4 +1,5 @@
-import { Component, useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Info } from 'lucide-react'
 import { api } from '../api/client'
 import './Insights.css'
 
@@ -248,7 +249,10 @@ function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
     <section className="ins-chart-card">
       <div className="ins-chart-card-header">
         <div>
-          <h3 className="ins-chart-title">{title}</h3>
+          <h3 className="ins-chart-title">
+          {title}
+          {title === 'Sodium:Potassium Ratio' && <InfoTooltip />}
+        </h3>
           <p className="ins-chart-meta">
             {n >= MIN_DAYS
               ? `${n} paired days`
@@ -278,6 +282,64 @@ function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
         </p>
       )}
     </section>
+  )
+}
+
+// ── Na:K Ratio Info Tooltip ───────────────────────────────────
+
+function InfoTooltip() {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const tooltipRef = useRef(null)
+  const leaveTimer = useRef(null)
+
+  const show = () => { clearTimeout(leaveTimer.current); setOpen(true) }
+  const hide = () => { leaveTimer.current = setTimeout(() => setOpen(false), 150) }
+
+  useEffect(() => {
+    if (!open) return
+    function close(e) {
+      if (!wrapRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [open])
+
+  useEffect(() => () => clearTimeout(leaveTimer.current), [])
+
+  useLayoutEffect(() => {
+    if (!open || !tooltipRef.current) return
+    const el = tooltipRef.current
+    el.style.left = '0'
+    el.style.right = 'auto'
+    const { right } = el.getBoundingClientRect()
+    const overflow = right - (window.innerWidth - 8)
+    if (overflow > 0) {
+      el.style.left = `-${overflow}px`
+    }
+  }, [open])
+
+  return (
+    <span className="nak-info-wrap" ref={wrapRef} onMouseEnter={show} onMouseLeave={hide}>
+      <button
+        type="button"
+        className="nak-info-btn"
+        aria-label="About the sodium:potassium ratio"
+        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
+      >
+        <Info size={14} />
+      </button>
+      {open && (
+        <div className="nak-info-tooltip" ref={tooltipRef} role="tooltip" onMouseEnter={show} onMouseLeave={hide}>
+          <p className="nak-info-label">What it is</p>
+          <p className="nak-info-body">Your daily sodium intake divided by your daily potassium intake.</p>
+          <p className="nak-info-label">Target</p>
+          <p className="nak-info-body">Below 1.0 means you're eating more potassium than sodium — the goal. A ratio closer to 1:2 (sodium:potassium) is often cited as ideal.</p>
+          <p className="nak-info-label">Why it matters</p>
+          <p className="nak-info-body">A high ratio is associated with elevated blood pressure. Most Western diets are well above 1.0.</p>
+        </div>
+      )}
+    </span>
   )
 }
 
@@ -316,7 +378,10 @@ function CorrelationCard({ corr, insightText }) {
   return (
     <div className={`ins-corr-card${hasData ? '' : ' ins-corr-card--dim'}`}>
       <div className="ins-corr-card-top">
-        <div className="ins-corr-var">{variable}</div>
+        <div className="ins-corr-var">
+          {variable}
+          {variable === 'Sodium:Potassium Ratio' && <InfoTooltip />}
+        </div>
         <span className={`ins-traffic-dot ${dotClass}`} />
       </div>
 
@@ -637,6 +702,9 @@ export default function Insights() {
           <span className="ins-traffic-legend-item">
             <span className="ins-traffic-dot ins-dot--gray" /> No clear signal yet
           </span>
+          <span className="ins-traffic-legend-item" style={{width: '100%'}}>
+            Bar length = correlation strength · Red = raises BP · Green = lowers BP
+          </span>
         </div>
 
         {(() => {
@@ -645,6 +713,7 @@ export default function Insights() {
             'daily sodium', 'daily potassium', 'daily magnesium',
             'sodium:potassium ratio', 'hydration', 'daily hydration',
             'daily water intake',
+            'top workout duration', 'top workout calories',
           ])
           const OBSERVABLE = new Set([
             'hrv average', 'readiness score', 'deep sleep', 'total sleep',
@@ -788,7 +857,7 @@ export default function Insights() {
         <p className="ins-section-sub">
           Previous day's activity metrics vs next-morning diastolic.
         </p>
-        <div className="ins-scatter-grid-2 ins-scatter-grid-2--half">
+        <div className="ins-scatter-grid-2">
           <ScatterCard
             title="Active Calories"
             data={scatterData.activeCalories}
@@ -804,6 +873,22 @@ export default function Insights() {
             xUnit=""
             rDiastolic={correlations.find(c => c.variable === 'Activity Score')?.r_diastolic}
             rSystolic={correlations.find(c => c.variable === 'Activity Score')?.r_systolic}
+          />
+          <ScatterCard
+            title="Top Workout Duration"
+            data={scatterData.workoutDuration}
+            xLabel="Workout duration"
+            xUnit="min"
+            rDiastolic={correlations.find(c => c.variable === 'Top Workout Duration')?.r_diastolic}
+            rSystolic={correlations.find(c => c.variable === 'Top Workout Duration')?.r_systolic}
+          />
+          <ScatterCard
+            title="Top Workout Calories"
+            data={scatterData.workoutCalories}
+            xLabel="Workout calories"
+            xUnit="kcal"
+            rDiastolic={correlations.find(c => c.variable === 'Top Workout Calories')?.r_diastolic}
+            rSystolic={correlations.find(c => c.variable === 'Top Workout Calories')?.r_systolic}
           />
         </div>
       </section>
