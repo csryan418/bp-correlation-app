@@ -181,12 +181,15 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const toastRef = useRef(null)
   const searchGenRef = useRef(0)
 
-  // Voice recognition
-  const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+  // Voice recording
+  const voiceSupported = !!(navigator.mediaDevices?.getUserMedia)
   const [voiceState, setVoiceState] = useState('idle')
   const [voiceError, setVoiceError] = useState(null)
   const [voiceUnmatched, setVoiceUnmatched] = useState([])
-  const [voiceConfirmQueue, setVoiceConfirmQueue] = useState([])
+  const [voiceParsedQueue, setVoiceParsedQueue] = useState([])
+  const [voiceTotalItems, setVoiceTotalItems] = useState(0)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
 
   useEffect(() => { fetchSavedMeals() }, [])
   useEffect(() => {
@@ -194,7 +197,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     setEditingId(null)
     setShowManual(false)
     setConfirmingItem(null)
-    setVoiceConfirmQueue([])
+    setVoiceParsedQueue([])
+    setVoiceTotalItems(0)
     setVoiceError(null)
     setVoiceUnmatched([])
     setQuery('')
@@ -288,8 +292,9 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   function handleConfirmCancel() {
-    const wasVoice = voiceConfirmQueue.length > 0
-    setVoiceConfirmQueue([])
+    const wasVoice = voiceParsedQueue.length > 0
+    setVoiceParsedQueue([])
+    setVoiceTotalItems(0)
     setConfirmingItem(null)
     setConfirmPortions([])
     setConfirmBasePer100g(null)
@@ -303,74 +308,88 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   function clearQuery() {
-    setVoiceConfirmQueue([])
+    setVoiceParsedQueue([])
+    setVoiceTotalItems(0)
     setQuery('')
     setResults([])
     setSearchError(null)
     setConfirmingItem(null)
   }
 
-  function handleVoiceClick() {
+  async function handleVoiceClick() {
+    if (voiceState === 'listening') {
+      mediaRecorderRef.current?.stop()
+      return
+    }
     if (voiceState !== 'idle') return
+
     setVoiceError(null)
     setVoiceUnmatched([])
-    setVoiceConfirmQueue([])
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) return
+    setVoiceParsedQueue([])
 
-    setVoiceState('listening')
-    const rec = new SR()
-    rec.continuous = false
-    rec.interimResults = false
-    rec.maxAlternatives = 1
-
-    let handled = false
-    const timeout = setTimeout(() => rec.stop(), 10000)
-
-    rec.onresult = async (e) => {
-      handled = true
-      clearTimeout(timeout)
-      const transcript = e.results[0][0].transcript
-      setVoiceState('processing')
-      await processVoiceTranscript(transcript)
-      setVoiceState('idle')
-    }
-
-    rec.onerror = (err) => {
-      handled = true
-      clearTimeout(timeout)
-      setVoiceState('idle')
-      if (err.error !== 'no-speech' && err.error !== 'aborted') {
-        setVoiceError('mic_error')
-      }
-    }
-
-    rec.onend = () => {
-      clearTimeout(timeout)
-      if (!handled) setVoiceState('idle')
-    }
-
+    let stream
     try {
-      rec.start()
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch {
+      setVoiceError('mic_error')
+      return
+    }
+
+    audioChunksRef.current = []
+    const recorder = new MediaRecorder(stream)
+    mediaRecorderRef.current = recorder
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunksRef.current.push(e.data)
+    }
+
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+      setVoiceState('transcribing')
+      try {
+        const form = new FormData()
+        form.append('audio', blob, 'audio.webm')
+        const res = await fetch('/api/voice/transcribe', { method: 'POST', body: form })
+        if (!res.ok) throw new Error('transcribe failed')
+        const { transcript } = await res.json()
+        if (!transcript?.trim()) { setVoiceState('idle'); return }
+        setVoiceState('processing')
+        await processVoiceTranscript(transcript)
+      } catch {
+        setVoiceError('transcribe_error')
+      }
+      setVoiceState('idle')
+    }
+
+    recorder.onerror = () => {
+      stream.getTracks().forEach(t => t.stop())
       setVoiceState('idle')
       setVoiceError('mic_error')
     }
+
+    setVoiceState('listening')
+    recorder.start()
   }
 
-  function openVoiceConfirm(queue) {
-    const { item, portionList, basePer100g, isBeverage, portionsFailed, portionIdx, parsedQuantity } = queue[0]
-    setResults([item])
-    setSearchError(null)
-    setConfirmingItem(item)
-    setConfirmPortions(portionList)
-    setConfirmBasePer100g(basePer100g)
-    setConfirmIsBeverage(isBeverage)
-    setConfirmPortionsFailed(portionsFailed)
-    setConfirmPortionIdx(portionIdx)
-    setConfirmQuantity(parsedQuantity)
-    setConfirmGramsInput(100)
-    setConfirmPortionsLoading(false)
+  async function processVoiceItem(parsedItem, remainingQueue) {
+    try {
+      const searchResults = await api.searchFood(parsedItem.food_name)
+      const allResults = Array.isArray(searchResults) ? searchResults.slice(0, 15) : []
+
+      if (allResults.length === 0) {
+        setVoiceUnmatched(prev => [...prev, parsedItem])
+        if (remainingQueue.length > 0) await processVoiceItem(remainingQueue[0], remainingQueue.slice(1))
+        return
+      }
+
+      setVoiceParsedQueue(remainingQueue)
+      setResults(allResults)
+      setSearchError(null)
+    } catch {
+      setVoiceUnmatched(prev => [...prev, parsedItem])
+      if (remainingQueue.length > 0) await processVoiceItem(remainingQueue[0], remainingQueue.slice(1))
+    }
   }
 
   async function processVoiceTranscript(transcript) {
@@ -390,69 +409,26 @@ function FoodSection({ selectedDate, setSelectedDate }) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 500,
-          system: 'You are a food logging assistant. Parse the user\'s spoken input into a JSON array of food items. Each item should have:\n- food_name: string (the food item, cleaned up for search)\n- quantity: number (default 1 if not specified)\n- serving_hint: string (e.g. \'medium\', \'large\', \'cup\', \'slice\' — null if not specified)\n\nReturn ONLY valid JSON, no explanation, no markdown. Example output: [{"food_name": "banana", "quantity": 1, "serving_hint": "medium"}, {"food_name": "hard boiled egg", "quantity": 2, "serving_hint": null}]',
+          system: 'You are a food logging assistant. Your only job is to extract food items from spoken input and return them as JSON.\n\nCRITICAL RULE: Preserve the COMPLETE food name exactly as spoken. Never shorten, simplify, or drop any words. \'chocolate chip cookie dough ice cream\' must be returned as \'chocolate chip cookie dough ice cream\' — not \'chocolate chip cookie dough\'. \'peanut butter chocolate chip granola bar\' must be returned as the full phrase.\n\nEach item should have:\n- food_name: string (complete food name, every word preserved)\n- quantity: number (default 1 if not specified)\n- serving_hint: string (e.g. \'medium\', \'large\', \'cup\', \'slice\' — null if not specified)\n\nReturn ONLY valid JSON, no explanation, no markdown.',
           messages: [{ role: 'user', content: transcript }],
         }),
       })
       if (!res.ok) throw new Error('API error')
       const data = await res.json()
       const text = data.content?.[0]?.text ?? ''
-      parsed = JSON.parse(text)
+      const raw = JSON.parse(text)
+      parsed = Array.isArray(raw) ? raw : (raw.items || raw.foods || Object.values(raw)[0] || [])
+      console.log('[voice] parsed food items:', parsed)
       if (!Array.isArray(parsed)) throw new Error('Not an array')
     } catch {
       setVoiceError('parse_error')
       return
     }
 
-    const unmatched = []
-    const queue = []
-
-    for (const item of parsed) {
-      if (!item.food_name) continue
-      try {
-        const searchResults = await api.searchFood(item.food_name)
-        const match = Array.isArray(searchResults) && searchResults[0]
-        if (!match) { unmatched.push(item); continue }
-
-        let portionList = []
-        let basePer100g = null
-        let isBeverage = false
-        let portionsFailed = false
-        let portionIdx = 0
-
-        try {
-          const portionsData = await api.getFoodPortions(match.fdcId)
-          portionList = dedupePortions(portionsData.portions ?? [])
-          basePer100g = portionsData.basePer100g ?? null
-          isBeverage = portionsData.isBeverage ?? false
-
-          portionIdx = portionList.findIndex(p => p.label !== '100g')
-          if (portionIdx < 0) portionIdx = 0
-
-          if (item.serving_hint && portionList.length > 0) {
-            const hint = item.serving_hint.toLowerCase()
-            const hintIdx = portionList.findIndex(p => {
-              const name = (p.portionDescription || p.description || p.modifier || '').toLowerCase()
-              return name.includes(hint)
-            })
-            if (hintIdx >= 0) portionIdx = hintIdx
-          }
-        } catch {
-          portionsFailed = true
-        }
-
-        queue.push({ item: match, portionList, basePer100g, isBeverage, portionsFailed, portionIdx, parsedQuantity: item.quantity ?? 1 })
-      } catch {
-        unmatched.push(item)
-      }
-    }
-
-    if (unmatched.length > 0) setVoiceUnmatched(unmatched)
-
-    if (queue.length > 0) {
-      setVoiceConfirmQueue(queue)
-      openVoiceConfirm(queue)
-    }
+    const validItems = parsed.filter(item => item.food_name)
+    if (validItems.length === 0) return
+    setVoiceTotalItems(validItems.length)
+    await processVoiceItem(validItems[0], validItems.slice(1))
   }
 
   // Computed values for confirm panel preview
@@ -467,7 +443,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const effectivePotassium = confirmNutrientsEdited && confirmManualPotassium !== '' ? parseFloat(confirmManualPotassium) : confirmPotassium
   const effectiveMagnesium = confirmNutrientsEdited && confirmManualMagnesium !== '' ? parseFloat(confirmManualMagnesium) : confirmMagnesium
 
-  function handleAddToBasket() {
+  async function handleAddToBasket() {
+    console.log('[voice] handleAddToBasket voiceParsedQueue:', voiceParsedQueue)
     if (!confirmingItem) return
     const grams = confirmPortionsFailed ? confirmGramsInput : (confirmPortions[confirmPortionIdx]?.grams ?? 100)
     const base = confirmBasePer100g ?? confirmingItem
@@ -497,14 +474,14 @@ function FoodSection({ selectedDate, setSelectedDate }) {
       portionLabel,
     }])
 
-    if (voiceConfirmQueue.length > 1) {
-      const nextQueue = voiceConfirmQueue.slice(1)
-      setVoiceConfirmQueue(nextQueue)
-      openVoiceConfirm(nextQueue)
+    if (voiceParsedQueue.length > 0) {
+      const [next, ...remaining] = voiceParsedQueue
+      await processVoiceItem(next, remaining)
       return
     }
 
-    setVoiceConfirmQueue([])
+    setVoiceParsedQueue([])
+    setVoiceTotalItems(0)
     setConfirmingItem(null)
     setConfirmPortions([])
     setConfirmBasePer100g(null)
@@ -919,29 +896,47 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 )}
               </div>
               {voiceSupported && (
-                <button
-                  className={`fs-mic-btn${voiceState === 'listening' ? ' fs-mic-btn--listening' : ''}${voiceState === 'processing' ? ' fs-mic-btn--processing' : ''}`}
-                  onClick={handleVoiceClick}
-                  disabled={voiceState !== 'idle'}
-                  aria-label={voiceState === 'listening' ? 'Listening…' : voiceState === 'processing' ? 'Processing…' : 'Search by voice'}
-                  title="Search by voice"
-                >
-                  {voiceState === 'processing' ? (
-                    <span className="fs-mic-spinner" />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                      <line x1="12" y1="19" x2="12" y2="23"/>
-                      <line x1="8" y1="23" x2="16" y2="23"/>
-                    </svg>
+                <div className="fs-mic-wrap">
+                  {voiceState === 'listening' && (
+                    <div className="fs-mic-popover" role="tooltip">
+                      Use <strong>and</strong> to log multiple items separately
+                      <span className="fs-mic-popover-arrow" />
+                    </div>
                   )}
-                </button>
+                  <button
+                    className={`fs-mic-btn${voiceState === 'listening' ? ' fs-mic-btn--listening' : ''}${(voiceState === 'processing' || voiceState === 'transcribing') ? ' fs-mic-btn--processing' : ''}`}
+                    onClick={handleVoiceClick}
+                    disabled={voiceState === 'processing' || voiceState === 'transcribing'}
+                    aria-label={voiceState === 'listening' ? 'Tap to stop recording' : voiceState === 'transcribing' ? 'Transcribing…' : voiceState === 'processing' ? 'Processing…' : 'Search by voice'}
+                    title={voiceState === 'listening' ? 'Tap to stop recording' : 'Search by voice'}
+                  >
+                    {(voiceState === 'processing' || voiceState === 'transcribing') ? (
+                      <span className="fs-mic-spinner" />
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                      </svg>
+                    )}
+                  </button>
+                  <span className={`fs-mic-tap-hint${voiceState === 'listening' ? '' : ' fs-mic-tap-hint--hidden'}`}>Tap to stop</span>
+                </div>
               )}
             </div>
+            {voiceState === 'transcribing' && (
+              <p className="fh-voice-transcribing">Transcribing…</p>
+            )}
             {voiceError === 'mic_error' && (
               <div className="fh-voice-banner fh-voice-banner--error">
                 <span>Microphone error — try again</span>
+                <button className="fh-voice-dismiss" onClick={() => setVoiceError(null)} aria-label="Dismiss">×</button>
+              </div>
+            )}
+            {voiceError === 'transcribe_error' && (
+              <div className="fh-voice-banner fh-voice-banner--error">
+                <span>Couldn't transcribe — try again or type your food</span>
                 <button className="fh-voice-dismiss" onClick={() => setVoiceError(null)} aria-label="Dismiss">×</button>
               </div>
             )}
@@ -1010,6 +1005,13 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 <button type="button" className="fs-cancel-btn" onClick={() => setShowManual(false)}>Cancel</button>
               </div>
             </form>
+          )}
+
+          {voiceTotalItems > 1 && voiceParsedQueue.length > 0 && results.length > 0 && !showManual && (
+            <div className="fh-voice-progress">
+              <span>Item {voiceTotalItems - voiceParsedQueue.length} of {voiceTotalItems}</span>
+              <span className="fh-voice-progress-next">Next: {voiceParsedQueue[0].food_name}</span>
+            </div>
           )}
 
           {/* Search results — "Select" now opens confirm panel that adds to basket */}
@@ -1346,7 +1348,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                         </div>
                         <div className="fh-my-meal-actions">
                           {!isEditing && (
-                            <button className="btn-primary fh-relog-btn" onClick={() => handleLoadMeal(meal.id, meal.name)}>
+                            <button className="fh-relog-btn" onClick={e => { e.stopPropagation(); handleLoadMeal(meal.id, meal.name) }}>
                               Add to Basket
                             </button>
                           )}

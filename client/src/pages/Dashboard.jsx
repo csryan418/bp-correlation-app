@@ -475,12 +475,11 @@ export default function Dashboard() {
                     : <span className="recovery-stat-missing">—</span>
                   }
                 </div>
-                <span className="recovery-stat-label">TOTAL TOP WORKOUT</span>
-                {workout != null && (
-                  <span className="recovery-stat-unit" style={{ marginTop: '0.25rem', alignSelf: 'center' }}>
-                    {workout.workout_type} · {Math.round(workout.total_calories)} cal
-                  </span>
-                )}
+                <span className="recovery-stat-label">
+                  {workout
+                    ? `TOTAL TOP WORKOUT: ${workout.workout_type.toUpperCase()}`
+                    : 'TOTAL TOP WORKOUT'}
+                </span>
               </div>
             </div>
           )}

@@ -31,11 +31,11 @@ async function searchOpenFoodFacts(query) {
       action: 'process',
       json: 1,
       fields: 'code,product_name,nutriments,serving_size',
-      page_size: 5,
+      page_size: 10,
       countries_tags: 'united-states',
     },
   });
-  return (res.data.products ?? []).slice(0, 5).map(normalizeOffProduct);
+  return (res.data.products ?? []).slice(0, 10).map(normalizeOffProduct);
 }
 
 export async function getOpenFoodFactsPortions(offId) {
@@ -145,8 +145,8 @@ async function searchUSDA(foodName) {
   };
 
   const [wholeRes, broadRes] = await Promise.all([
-    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 5, dataType: 'Foundation,SR Legacy' } }),
-    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 3 } }),
+    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 10, dataType: 'Foundation,SR Legacy' } }),
+    axios.get(`${BASE_URL}/foods/search`, { params: { ...commonParams, pageSize: 5 } }),
   ]);
 
   const seen = new Set();
@@ -166,7 +166,7 @@ async function searchUSDA(foodName) {
       if (!aWhole && bWhole) return 1;
       return 0;
     })
-    .slice(0, 5);
+    .slice(0, 15);
 
   return foods.map(food => {
     const getNutrient = (id) =>
