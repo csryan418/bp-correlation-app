@@ -164,9 +164,9 @@ export function receiveAppleHealth(req, res) {
   }
   console.log(`[apple-health] active_energy: stored ${stored.active_energy.length}, skipped ${skipped.active_energy.length}`);
 
-  // Record wall-clock timestamp of this push for the /api/health endpoint
-  db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_apple_health_push', datetime('now'))")
-    .run();
+  // Record wall-clock timestamps for /api/health and /api/sync/status
+  db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_apple_health_push', datetime('now'))").run();
+  db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_apple_health_sync', datetime('now'))").run();
 
   res.json({ success: true, stored, skipped });
 }

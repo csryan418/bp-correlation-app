@@ -16,7 +16,7 @@ export async function triggerSync(req, res) {
     return res.status(502).json({ success: false, apns: { status, reason } });
   }
 
-  res.json({ success: true, sent: result.sent.length });
+  res.json({ success: true, sent: result.sent.length, requestedAt: new Date().toISOString() });
 }
 
 export function storeDeviceToken(req, res) {
@@ -35,4 +35,14 @@ export function getDeviceToken() {
     .prepare(`SELECT value FROM metadata WHERE key = 'apns_device_token'`)
     .get();
   return row?.value ?? null;
+}
+
+export function getSyncStatus(req, res) {
+  const row = getDb()
+    .prepare(`SELECT value FROM metadata WHERE key = 'last_apple_health_sync'`)
+    .get();
+  const lastSync = row?.value
+    ? new Date(row.value.replace(' ', 'T') + 'Z').toISOString()
+    : null;
+  res.json({ lastSync });
 }

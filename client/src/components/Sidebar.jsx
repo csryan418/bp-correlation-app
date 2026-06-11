@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { api } from '../api/client'
 import './Sidebar.css'
@@ -13,11 +13,14 @@ const NAV_ITEMS = [
 ]
 
 export default function Sidebar() {
-  const [status, setStatus] = useState({ state: 'checking', lastSync: null })
+  const [status, setStatus] = useState({ state: 'checking' })
+  const [appleHealthSync, setAppleHealthSync] = useState({ value: null, loaded: false })
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [syncError, setSyncError] = useState(false)
+  // 'idle' | 'requesting' | 'polling' | 'synced' | 'timeout' | 'error'
+  const [syncPhase, setSyncPhase] = useState('idle')
+  const [syncMessage, setSyncMessage] = useState(null)
+  const pollRef = useRef(null)
 
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
@@ -28,6 +31,14 @@ export default function Sidebar() {
     checkHealth()
     const id = setInterval(checkHealth, 30000)
     return () => clearInterval(id)
+  }, [])
+
+  // Load the real Apple Health sync time on mount, and refresh it whenever
+  // dashboard data refreshes (e.g. after a successful sync).
+  useEffect(() => {
+    fetchSyncStatus()
+    window.addEventListener('bp:sync-complete', fetchSyncStatus)
+    return () => window.removeEventListener('bp:sync-complete', fetchSyncStatus)
   }, [])
 
   // Close drawer when viewport widens past the mobile breakpoint
@@ -42,36 +53,70 @@ export default function Sidebar() {
   async function checkHealth() {
     try {
       await api.health()
-      setStatus({ state: 'connected', lastSync: new Date() })
+      setStatus({ state: 'connected' })
     } catch {
       setStatus(prev => ({ ...prev, state: 'unreachable' }))
     }
   }
 
-  async function syncNow() {
-    if (syncing) return
-    setSyncing(true)
-    setSyncError(false)
+  async function fetchSyncStatus() {
     try {
-      const [response] = await Promise.all([
+      const { lastSync } = await api.getSyncStatus()
+      setAppleHealthSync({ value: lastSync, loaded: true })
+    } catch {
+      // leave the previously displayed value in place
+    }
+  }
+
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  useEffect(() => () => stopPolling(), [])
+
+  async function syncNow() {
+    if (syncPhase === 'requesting' || syncPhase === 'polling') return
+    stopPolling()
+    setSyncPhase('requesting')
+    setSyncMessage(null)
+
+    let requestedAt
+    try {
+      const [, syncResult] = await Promise.all([
         api.ouraManualSync(),
         api.requestSync(),
       ])
-      console.log('[syncNow] response:', response)
-      if (response && response.success === false) {
-        setSyncing(false)
-        setSyncError(true)
-        setTimeout(() => setSyncError(false), 3000)
-      } else {
-        setStatus(prev => ({ ...prev, lastSync: new Date() }))
-        setSyncing(false)
-      }
+      requestedAt = syncResult?.requestedAt ? new Date(syncResult.requestedAt) : new Date()
     } catch (err) {
-      console.log('[syncNow] error:', err)
-      setSyncing(false)
-      setSyncError(true)
-      setTimeout(() => setSyncError(false), 3000)
+      setSyncPhase('error')
+      setSyncMessage(err.message || 'Sync failed')
+      return
     }
+
+    setSyncPhase('polling')
+    const deadline = Date.now() + 20000
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const { lastSync } = await api.getSyncStatus()
+        if (lastSync && new Date(lastSync).getTime() > requestedAt.getTime()) {
+          stopPolling()
+          setSyncPhase('synced')
+          window.dispatchEvent(new CustomEvent('bp:sync-complete'))
+          setTimeout(() => setSyncPhase(p => (p === 'synced' ? 'idle' : p)), 5000)
+          return
+        }
+      } catch {
+        // keep polling
+      }
+      if (Date.now() >= deadline) {
+        stopPolling()
+        setSyncPhase('timeout')
+      }
+    }, 2000)
   }
 
   function toggleTheme() {
@@ -123,26 +168,29 @@ export default function Sidebar() {
           <span className={`status-dot status-dot--${status.state}`} />
           <div className="status-text">
             <span className="status-label">
-              {syncing && 'Syncing...'}
-              {!syncing && syncError && 'Sync failed'}
-              {!syncing && !syncError && status.state === 'connected' && 'Pipeline connected'}
-              {!syncing && !syncError && status.state === 'unreachable' && 'Backend unreachable'}
-              {!syncing && !syncError && status.state === 'checking' && 'Checking…'}
+              {syncPhase === 'requesting' && 'Requesting Apple Health sync…'}
+              {syncPhase === 'polling' && 'Waiting for Apple Health sync…'}
+              {syncPhase === 'synced' && 'Apple Health synced ✓'}
+              {syncPhase === 'timeout' && 'No Apple Health sync received — unlock your phone and try again'}
+              {syncPhase === 'error' && (syncMessage || 'Apple Health sync failed')}
+              {syncPhase === 'idle' && status.state === 'connected' && 'Pipeline connected'}
+              {syncPhase === 'idle' && status.state === 'unreachable' && 'Backend unreachable'}
+              {syncPhase === 'idle' && status.state === 'checking' && 'Checking…'}
             </span>
-            {status.lastSync && !syncing && (
+            {syncPhase === 'idle' && appleHealthSync.loaded && (
               <span className="status-sync">
-                synced {formatRelative(status.lastSync)}
+                {formatAppleHealthSync(appleHealthSync.value)}
               </span>
             )}
           </div>
           <button
             className="sync-btn"
             onClick={syncNow}
-            title="Sync now"
-            disabled={syncing}
-            aria-label="Sync now"
+            title="Sync Apple Health"
+            disabled={syncPhase === 'requesting' || syncPhase === 'polling'}
+            aria-label="Sync Apple Health"
           >
-            <RefreshCw className={`sync-icon${syncing ? ' sync-icon--spinning' : ''}`} />
+            <RefreshCw className={`sync-icon${syncPhase === 'requesting' || syncPhase === 'polling' ? ' sync-icon--spinning' : ''}`} />
           </button>
         </div>
       </>
@@ -190,9 +238,21 @@ export default function Sidebar() {
   )
 }
 
-function formatRelative(date) {
-  const secs = Math.floor((Date.now() - date.getTime()) / 1000)
-  if (secs < 60) return 'just now'
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+// Render the last Apple Health sync time as a relative, explicitly-labeled string.
+function formatAppleHealthSync(lastSync) {
+  if (!lastSync) return 'No Apple Health sync recorded'
+  const then = new Date(lastSync)
+  const mins = Math.floor((Date.now() - then.getTime()) / 60000)
+  if (mins < 1) return 'Apple Health synced just now'
+  if (mins < 60) return `Apple Health synced ${mins} min ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `Apple Health synced ${hrs} hr ago`
+  const when = then.toLocaleString([], {
+    month: 'short',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  return `Apple Health synced ${when}`
 }

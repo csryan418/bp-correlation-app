@@ -48,6 +48,7 @@ export const api = {
   oura: () => request('/oura/yesterday'),
   ouraManualSync: () => request('/oura/sync/manual', { method: 'POST' }),
   requestSync: () => request('/sync/request', { method: 'POST' }),
+  getSyncStatus: () => request('/sync/status'),
   getSavedMeals: () => request('/saved-meals'),
   createSavedMeal: (name, items) =>
     request('/saved-meals', { method: 'POST', body: JSON.stringify({ name, items }) }),

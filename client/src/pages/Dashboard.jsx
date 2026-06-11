@@ -306,30 +306,36 @@ export default function Dashboard() {
   const [workout, setWorkout] = useState(null)
 
   useEffect(() => {
-    api
-      .bloodPressure()
-      .then(data => setBp({ data, loading: false, error: null }))
-      .catch(err => setBp({ data: null, loading: false, error: err.message }))
+    function loadData() {
+      api
+        .bloodPressure()
+        .then(data => setBp({ data, loading: false, error: null }))
+        .catch(err => setBp({ data: null, loading: false, error: err.message }))
 
-    api
-      .insightsFull()
-      .then(data => setInsights({ data, loading: false, error: null }))
-      .catch(err => setInsights({ data: null, loading: false, error: err.message }))
+      api
+        .insightsFull()
+        .then(data => setInsights({ data, loading: false, error: null }))
+        .catch(err => setInsights({ data: null, loading: false, error: err.message }))
 
-    api
-      .oura()
-      .then(data => setOura({ data, loading: false, error: null }))
-      .catch(err => setOura({ data: null, loading: false, error: err.message }))
+      api
+        .oura()
+        .then(data => setOura({ data, loading: false, error: null }))
+        .catch(err => setOura({ data: null, loading: false, error: err.message }))
 
-    api
-      .activityYesterday()
-      .then(data => setActivity({ data, loading: false, error: null }))
-      .catch(err => setActivity({ data: null, loading: false, error: err.message }))
+      api
+        .activityYesterday()
+        .then(data => setActivity({ data, loading: false, error: null }))
+        .catch(err => setActivity({ data: null, loading: false, error: err.message }))
 
-    api
-      .workoutYesterday()
-      .then(data => setWorkout(data))
-      .catch(() => setWorkout(null))
+      api
+        .workoutYesterday()
+        .then(data => setWorkout(data))
+        .catch(() => setWorkout(null))
+    }
+
+    loadData()
+    window.addEventListener('bp:sync-complete', loadData)
+    return () => window.removeEventListener('bp:sync-complete', loadData)
   }, [])
 
   const topInsights = extractInsights(insights.data)
