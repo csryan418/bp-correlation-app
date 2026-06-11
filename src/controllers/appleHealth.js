@@ -17,7 +17,6 @@ export function receiveAppleHealth(req, res) {
   const metrics = payload?.data?.metrics;
 
   console.log('[apple-health] received payload with', Array.isArray(metrics) ? metrics.length : 0, 'metrics');
-  console.log('[apple-health] raw payload:', JSON.stringify(payload, null, 2));
 
   if (!Array.isArray(metrics)) {
     return res.status(400).json({ error: 'Expected { data: { metrics: [...] } } payload' });
@@ -38,11 +37,12 @@ export function receiveAppleHealth(req, res) {
   // --- Blood Pressure ---
   // Each entry has lowercase systolic and diastolic fields already paired on the same record
   const bpEntries = byMetric['blood_pressure'] ?? [];
-  console.log(`[apple-health] blood_pressure: processing ${bpEntries.length} entries`);
+  let bpMalformed = 0;
+  let bpMalformedExample = null;
   for (const entry of bpEntries) {
-    console.log(`[apple-health] blood_pressure entry: ${JSON.stringify(entry)}`);
     if (entry.systolic == null || entry.diastolic == null) {
-      console.log(`[apple-health] blood_pressure: skipping entry missing systolic/diastolic fields`);
+      bpMalformed++;
+      if (bpMalformedExample === null) bpMalformedExample = entry;
       continue;
     }
 
@@ -64,7 +64,10 @@ export function receiveAppleHealth(req, res) {
 
     stored.blood_pressure.push({ date, time_of_day, systolic: entry.systolic, diastolic: entry.diastolic });
   }
-  console.log(`[apple-health] blood_pressure: stored ${stored.blood_pressure.length}, skipped ${skipped.blood_pressure.length}`);
+  console.log(`[apple-health] blood_pressure: stored ${stored.blood_pressure.length}, skipped ${skipped.blood_pressure.length}, malformed ${bpMalformed}`);
+  if (bpMalformed > 0) {
+    console.warn(`[apple-health] WARNING: ${bpMalformed} malformed blood_pressure entries, example: ${JSON.stringify(bpMalformedExample)}`);
+  }
 
   // --- Resting Heart Rate ---
   for (const entry of byMetric['resting_heart_rate'] ?? []) {
