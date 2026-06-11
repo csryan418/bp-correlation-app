@@ -11,6 +11,7 @@
     "install:all": "npm install && npm install --prefix client"
   },
   "dependencies": {
+    "@parse/node-apn": "^7.1.0",
     "axios": "^1.7.2",
     "better-sqlite3": "^12.9.0",
     "dotenv": "^16.4.5",

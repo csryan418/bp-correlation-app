@@ -31,22 +31,12 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Daily Oura sync at 8:30am
-cron.schedule('0 10 * * *', async () => {
+cron.schedule('0 12 * * *', async () => {
   try {
     const result = await runOuraSync();
     console.log(`[cron] Oura daily sync complete — ${result.sleep.synced} sleep days, ${result.activity.synced} activity days synced`);
   } catch (err) {
     console.error(`[cron] Oura daily sync failed: ${err.message}`);
-  }
-});
-
-// Catch-up sync at 10:00am for sleep data not yet processed at 8:30am
-cron.schedule('0 12 * * *', async () => {
-  try {
-    const result = await runOuraSync();
-    console.log(`[cron] Oura catch-up sync complete — ${result.sleep.synced} sleep days, ${result.activity.synced} activity days synced`);
-  } catch (err) {
-    console.error(`[cron] Oura catch-up sync failed: ${err.message}`);
   }
 });
 

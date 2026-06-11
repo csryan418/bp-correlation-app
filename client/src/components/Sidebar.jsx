@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useLayoutEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { api } from '../api/client'
 import './Sidebar.css'
 
@@ -15,6 +16,8 @@ export default function Sidebar() {
   const [status, setStatus] = useState({ state: 'checking', lastSync: null })
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState(false)
 
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
@@ -42,6 +45,32 @@ export default function Sidebar() {
       setStatus({ state: 'connected', lastSync: new Date() })
     } catch {
       setStatus(prev => ({ ...prev, state: 'unreachable' }))
+    }
+  }
+
+  async function syncNow() {
+    if (syncing) return
+    setSyncing(true)
+    setSyncError(false)
+    try {
+      const [response] = await Promise.all([
+        api.ouraManualSync(),
+        api.requestSync(),
+      ])
+      console.log('[syncNow] response:', response)
+      if (response && response.success === false) {
+        setSyncing(false)
+        setSyncError(true)
+        setTimeout(() => setSyncError(false), 3000)
+      } else {
+        setStatus(prev => ({ ...prev, lastSync: new Date() }))
+        setSyncing(false)
+      }
+    } catch (err) {
+      console.log('[syncNow] error:', err)
+      setSyncing(false)
+      setSyncError(true)
+      setTimeout(() => setSyncError(false), 3000)
     }
   }
 
@@ -94,16 +123,27 @@ export default function Sidebar() {
           <span className={`status-dot status-dot--${status.state}`} />
           <div className="status-text">
             <span className="status-label">
-              {status.state === 'connected' && 'Pipeline connected'}
-              {status.state === 'unreachable' && 'Backend unreachable'}
-              {status.state === 'checking' && 'Checking…'}
+              {syncing && 'Syncing...'}
+              {!syncing && syncError && 'Sync failed'}
+              {!syncing && !syncError && status.state === 'connected' && 'Pipeline connected'}
+              {!syncing && !syncError && status.state === 'unreachable' && 'Backend unreachable'}
+              {!syncing && !syncError && status.state === 'checking' && 'Checking…'}
             </span>
-            {status.lastSync && (
+            {status.lastSync && !syncing && (
               <span className="status-sync">
                 synced {formatRelative(status.lastSync)}
               </span>
             )}
           </div>
+          <button
+            className="sync-btn"
+            onClick={syncNow}
+            title="Sync now"
+            disabled={syncing}
+            aria-label="Sync now"
+          >
+            <RefreshCw className={`sync-icon${syncing ? ' sync-icon--spinning' : ''}`} />
+          </button>
         </div>
       </>
     )

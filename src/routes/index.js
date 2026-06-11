@@ -15,6 +15,7 @@ import activityRoutes from './activity.js';
 import checkinRoutes from './checkin.js';
 import workoutsRoutes from './workouts.js';
 import voiceRoutes from './voice.js';
+import syncRoutes from './sync.js';
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use('/activity', activityRoutes);
 router.use('/checkin', checkinRoutes);
 router.use('/workouts', workoutsRoutes);
 router.use('/voice', voiceRoutes);
+router.use('/sync', syncRoutes);
 
 export default router;

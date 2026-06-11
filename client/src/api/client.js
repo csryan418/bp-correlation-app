@@ -46,6 +46,8 @@ export const api = {
       body: JSON.stringify({ water_oz: oz, date }),
     }),
   oura: () => request('/oura/yesterday'),
+  ouraManualSync: () => request('/oura/sync/manual', { method: 'POST' }),
+  requestSync: () => request('/sync/request', { method: 'POST' }),
   getSavedMeals: () => request('/saved-meals'),
   createSavedMeal: (name, items) =>
     request('/saved-meals', { method: 'POST', body: JSON.stringify({ name, items }) }),

@@ -156,6 +156,15 @@ export function getYesterdayActivity(req, res) {
   res.json(row ?? null)
 }
 
+export async function manualSync(req, res) {
+  try {
+    const result = await runOuraSync();
+    res.json({ success: true, result });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+}
+
 export async function syncOura(req, res) {
   try {
     const result = await runOuraSync();

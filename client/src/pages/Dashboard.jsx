@@ -394,8 +394,8 @@ export default function Dashboard() {
           {!oura.loading && !recovery && (
             <p className="card-notice">
               {oura.error
-                ? 'No Oura data available.'
-                : 'No recovery data for yesterday.'}
+                ? 'No Oura data available yet...'
+                : 'No recovery data for yesterday yet...'}
             </p>
           )}
 
@@ -443,8 +443,8 @@ export default function Dashboard() {
           {!activity.loading && !activityStats && (
             <p className="card-notice">
               {activity.error
-                ? 'No activity data available.'
-                : 'No activity data for yesterday.'}
+                ? 'No activity data available yet...'
+                : 'No activity data for yesterday yet...'}
             </p>
           )}
 
