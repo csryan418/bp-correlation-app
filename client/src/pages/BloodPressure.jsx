@@ -235,77 +235,36 @@ export default function BloodPressure() {
             )}
 
             {!state.loading && rows.length > 0 && (
-              <>
-                {/* Desktop table */}
-                <table className="bp-table bp-table--desktop">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Morning</th>
-                      <th>Evening</th>
+              <table className="bp-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Morning</th>
+                    <th>Evening</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.date}>
+                      <td className="date-cell">{formatDate(row.date)}</td>
+                      <td className={diastolicClass(row.morning?.diastolic)}>
+                        {row.morning ? (
+                          `${row.morning.systolic}/${row.morning.diastolic}`
+                        ) : (
+                          <span className="no-reading">—</span>
+                        )}
+                      </td>
+                      <td className={diastolicClass(row.evening?.diastolic)}>
+                        {row.evening ? (
+                          `${row.evening.systolic}/${row.evening.diastolic}`
+                        ) : (
+                          <span className="no-reading">—</span>
+                        )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(row => (
-                      <tr key={row.date}>
-                        <td className="date-cell">{formatDate(row.date)}</td>
-                        <td className={diastolicClass(row.morning?.diastolic)}>
-                          {row.morning ? (
-                            `${row.morning.systolic}/${row.morning.diastolic}`
-                          ) : (
-                            <span className="no-reading">—</span>
-                          )}
-                        </td>
-                        <td className={diastolicClass(row.evening?.diastolic)}>
-                          {row.evening ? (
-                            `${row.evening.systolic}/${row.evening.diastolic}`
-                          ) : (
-                            <span className="no-reading">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* Mobile flat list */}
-                <ul className="bp-list bp-list--mobile">
-                  {rows.flatMap(row => {
-                    const items = []
-                    if (row.morning) {
-                      items.push(
-                        <li key={`${row.date}-m`} className="bp-list-row">
-                          <span className="bp-list-date">{formatDate(row.date)}</span>
-                          <span className="bp-list-period bp-list-period--morning">AM</span>
-                          <span className={`bp-list-value ${diastolicClass(row.morning.diastolic)}`}>
-                            {row.morning.systolic}/{row.morning.diastolic}
-                          </span>
-                        </li>
-                      )
-                    }
-                    if (row.evening) {
-                      items.push(
-                        <li key={`${row.date}-e`} className="bp-list-row">
-                          <span className="bp-list-date">{formatDate(row.date)}</span>
-                          <span className="bp-list-period bp-list-period--evening">PM</span>
-                          <span className={`bp-list-value ${diastolicClass(row.evening.diastolic)}`}>
-                            {row.evening.systolic}/{row.evening.diastolic}
-                          </span>
-                        </li>
-                      )
-                    }
-                    if (items.length === 0) {
-                      items.push(
-                        <li key={`${row.date}-empty`} className="bp-list-row">
-                          <span className="bp-list-date">{formatDate(row.date)}</span>
-                          <span className="bp-list-no-data">No readings</span>
-                        </li>
-                      )
-                    }
-                    return items
-                  })}
-                </ul>
-              </>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
 
