@@ -1,0 +1,14 @@
+{
+  "name": "bp-journal-mcp-server",
+  "version": "1.0.0",
+  "description": "Read-only MCP server exposing BP Journal health data to Claude Desktop over stdio",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^12.10.0"
+  }
+}
