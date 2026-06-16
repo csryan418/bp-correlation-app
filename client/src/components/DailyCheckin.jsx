@@ -2,19 +2,6 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import './DailyCheckin.css'
 
-function localTodayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function isDismissedToday() {
-  return localStorage.getItem('checkin_dismissed_date') === localTodayStr()
-}
-
-function markDismissedToday() {
-  localStorage.setItem('checkin_dismissed_date', localTodayStr())
-}
-
 export default function DailyCheckin() {
   const [visible, setVisible] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -28,7 +15,6 @@ export default function DailyCheckin() {
   useEffect(() => {
     const hour = new Date().getHours()
     if (hour < 20) return
-    if (isDismissedToday()) return
 
     api.getCheckinToday()
       .then(() => {
@@ -41,14 +27,12 @@ export default function DailyCheckin() {
   }, [])
 
   function dismiss() {
-    markDismissedToday()
     setVisible(false)
   }
 
   async function submit() {
     try {
       await api.saveCheckin(answers)
-      markDismissedToday()
       setSubmitted(true)
       setTimeout(() => setVisible(false), 1400)
     } catch (err) {
