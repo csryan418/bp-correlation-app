@@ -8,7 +8,6 @@ export default function DailyCheckin() {
   const [answers, setAnswers] = useState({
     eight_sleep: null,
     stress_level: null,
-    alcohol: null,
     energy_level: null,
   })
 
@@ -119,35 +118,7 @@ export default function DailyCheckin() {
                 </button>
               </div>
 
-              {/* Q3 — Alcohol */}
-              <div className="ci-question">
-                <label className="ci-label">Did you drink alcohol yesterday?</label>
-                <div className="ci-toggle-group">
-                  {['Yes', 'No', 'Skip'].map((opt) => {
-                    const val = opt === 'Skip' ? null : opt === 'Yes' ? 1 : 0
-                    const active = opt === 'Skip'
-                      ? answers.alcohol === null && answers._alcohol_touched
-                      : answers.alcohol === val
-                    return (
-                      <button
-                        key={opt}
-                        className={`ci-toggle${active ? ' ci-toggle--active' : ''}`}
-                        onClick={() => {
-                          if (opt === 'Skip') {
-                            setAnswers(prev => ({ ...prev, alcohol: null, _alcohol_touched: true }))
-                          } else {
-                            setAnswers(prev => ({ ...prev, alcohol: val, _alcohol_touched: false }))
-                          }
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Q4 — Energy level */}
+              {/* Q3 — Energy level */}
               <div className="ci-question">
                 <label className="ci-label">Energy level today</label>
                 <div className="ci-scale-wrap">

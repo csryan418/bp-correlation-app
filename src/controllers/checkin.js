@@ -17,19 +17,18 @@ export function getTodayCheckin(req, res) {
 
 export function saveCheckin(req, res) {
   const db = getDb();
-  const { eight_sleep, stress_level, alcohol, energy_level } = req.body;
+  const { eight_sleep, stress_level, energy_level } = req.body;
   const date = todayStr();
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO daily_checkins (date, eight_sleep, stress_level, alcohol, energy_level, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO daily_checkins (date, eight_sleep, stress_level, energy_level, created_at)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(date) DO UPDATE SET
       eight_sleep = excluded.eight_sleep,
       stress_level = excluded.stress_level,
-      alcohol = excluded.alcohol,
       energy_level = excluded.energy_level
-  `).run(date, eight_sleep ?? null, stress_level ?? null, alcohol ?? null, energy_level ?? null, now);
+  `).run(date, eight_sleep ?? null, stress_level ?? null, energy_level ?? null, now);
 
   const row = db.prepare('SELECT * FROM daily_checkins WHERE date = ?').get(date);
   res.json({ checkin: row });
