@@ -14,6 +14,15 @@ function calcMineral(base, grams, qty) {
   return Math.round((base / 100) * grams * qty)
 }
 
+// Parse a manually-entered mineral value: blank/whitespace/non-numeric -> null
+// (treated as "not provided"); a deliberately typed 0 is preserved as 0.
+function parseManualMineral(raw) {
+  const t = String(raw ?? '').trim()
+  if (t === '') return null
+  const n = parseFloat(t)
+  return Number.isNaN(n) ? null : n
+}
+
 function formatLogDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -459,9 +468,12 @@ function FoodSection({ selectedDate, setSelectedDate }) {
     const computedSodiumPU    = calcMineral(baseSodium,    grams, 1)
     const computedPotassiumPU = calcMineral(basePotassium, grams, 1)
     const computedMagnesiumPU = calcMineral(baseMagnesium, grams, 1)
-    const finalSodiumPU    = confirmNutrientsEdited && confirmManualSodium    !== '' ? (parseFloat(confirmManualSodium)    || 0) / qtyNum : computedSodiumPU
-    const finalPotassiumPU = confirmNutrientsEdited && confirmManualPotassium !== '' ? (parseFloat(confirmManualPotassium) || 0) / qtyNum : computedPotassiumPU
-    const finalMagnesiumPU = confirmNutrientsEdited && confirmManualMagnesium !== '' ? (parseFloat(confirmManualMagnesium) || 0) / qtyNum : computedMagnesiumPU
+    const manualSodiumTotal    = parseManualMineral(confirmManualSodium)
+    const manualPotassiumTotal = parseManualMineral(confirmManualPotassium)
+    const manualMagnesiumTotal = parseManualMineral(confirmManualMagnesium)
+    const finalSodiumPU    = confirmNutrientsEdited && confirmManualSodium    !== '' ? (manualSodiumTotal    == null ? null : manualSodiumTotal    / qtyNum) : computedSodiumPU
+    const finalPotassiumPU = confirmNutrientsEdited && confirmManualPotassium !== '' ? (manualPotassiumTotal == null ? null : manualPotassiumTotal / qtyNum) : computedPotassiumPU
+    const finalMagnesiumPU = confirmNutrientsEdited && confirmManualMagnesium !== '' ? (manualMagnesiumTotal == null ? null : manualMagnesiumTotal / qtyNum) : computedMagnesiumPU
 
     setBasket(prev => [...prev, {
       key: `${confirmingItem.fdcId ?? 'manual'}-${Date.now()}`,
@@ -606,9 +618,9 @@ function FoodSection({ selectedDate, setSelectedDate }) {
         fdcId: null,
         description: manualName.trim(),
         servings: 1,
-        sodium_mg:    parseFloat(manualSodium)    || null,
-        potassium_mg: parseFloat(manualPotassium) || null,
-        magnesium_mg: parseFloat(manualMagnesium) || null,
+        sodium_mg:    parseManualMineral(manualSodium),
+        potassium_mg: parseManualMineral(manualPotassium),
+        magnesium_mg: parseManualMineral(manualMagnesium),
         date: manualDate || today,
         meal_type: activeMealType,
         meal_id: Date.now(),
@@ -1641,9 +1653,9 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
       food_name: manualName.trim(),
       fdc_id: null,
       default_serving_size: 1,
-      sodium_mg_per_100g:    parseFloat(manualSodium)    || null,
-      potassium_mg_per_100g: parseFloat(manualPotassium) || null,
-      magnesium_mg_per_100g: parseFloat(manualMagnesium) || null,
+      sodium_mg_per_100g:    parseManualMineral(manualSodium),
+      potassium_mg_per_100g: parseManualMineral(manualPotassium),
+      magnesium_mg_per_100g: parseManualMineral(manualMagnesium),
       portionLabel: '1 srv',
     }])
     setManualName(''); setManualSodium(''); setManualPotassium(''); setManualMagnesium('')
@@ -1968,9 +1980,9 @@ function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }
   function handleManualConfirm(e) {
     e.preventDefault()
     if (!manualName.trim()) return
-    const sod = parseFloat(manualSodium)    || null
-    const pot = parseFloat(manualPotassium) || null
-    const mag = parseFloat(manualMagnesium) || null
+    const sod = parseManualMineral(manualSodium)
+    const pot = parseManualMineral(manualPotassium)
+    const mag = parseManualMineral(manualMagnesium)
     onSelect({
       food_name: manualName.trim(),
       fdc_id: null,
