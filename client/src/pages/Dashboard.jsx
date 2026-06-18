@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { strengthTier } from '../utils/correlationStrength'
 import './Dashboard.css'
 
 function greeting() {
@@ -66,11 +67,13 @@ function formatBPHistoryDate(dateStr) {
   })
 }
 
-// Top 2 correlations from the insightsFull response, already ranked by |r_diastolic|
+// Top 2 SIGNIFICANT correlations from the insightsFull response, already ranked
+// by |r_diastolic| (backend sort). Non-significant correlations are dropped so
+// the Dashboard never shows a confident card the Insights page greys out.
 function extractInsights(data) {
   const list = Array.isArray(data?.correlations) ? data.correlations : []
   return list
-    .filter(c => c != null && c.r_diastolic != null && c.n >= 7)
+    .filter(c => c != null && c.r_diastolic != null && c.n >= 7 && c.significant_diastolic === true)
     .slice(0, 2)
 }
 
@@ -363,7 +366,7 @@ export default function Dashboard() {
         {/* Card 2 — Insights */}
         <section className="card insights-card">
           <h2 className="card-title">Correlation Insights</h2>
-          <p className="insights-bar-legend">Bar length = correlation strength · Red = raises BP · Green = lowers BP</p>
+          <p className="insights-bar-legend">Statistically significant correlations only · Bar length = strength · Red = raises BP · Green = lowers BP</p>
 
           {insights.loading && (
             <div className="insights-skeleton">
@@ -374,7 +377,7 @@ export default function Dashboard() {
           )}
 
           {!insights.loading && topInsights.length === 0 && (
-            <p className="card-notice">Insights will appear as more data is logged.</p>
+            <p className="card-notice">Keep logging — no significant correlations yet.</p>
           )}
 
           {topInsights.map((corr, i) => (
@@ -649,9 +652,12 @@ function InfoTooltip() {
 function DashCorrelationRow({ corr }) {
   const { variable, r_diastolic, n } = corr
   const absR = Math.abs(r_diastolic)
-  const direction = r_diastolic > 0.05 ? 'positive' : r_diastolic < -0.05 ? 'negative' : 'neutral'
-  const barColor = direction === 'negative' ? 'var(--green)' : direction === 'positive' ? 'var(--red)' : 'var(--text-muted)'
-  const rClass = absR >= 0.4 ? 'insight-r--strong' : absR >= 0.2 ? 'insight-r--moderate' : 'insight-r--weak'
+  // Shared significance-gated tiering — identical logic to the Insights page.
+  const tier = strengthTier(corr)
+  const direction = r_diastolic < 0 ? 'negative' : 'positive'
+  const barColor = !tier.significant ? 'var(--text-muted)'
+    : r_diastolic < 0 ? 'var(--green)'
+    : 'var(--red)'
   const rLabel = (r_diastolic > 0 ? '+' : '') + r_diastolic.toFixed(2)
 
   return (
@@ -661,14 +667,14 @@ function DashCorrelationRow({ corr }) {
           {variable}
           {variable === 'Sodium:Potassium Ratio' && <InfoTooltip />}
         </span>
-        {direction !== 'neutral' && (
+        {tier.significant && (
           <span className={`insight-tag insight-tag--${direction}`}>
             {direction === 'positive' ? '↑ raises BP' : '↓ lowers BP'}
           </span>
         )}
       </div>
       <div className="insight-r-row">
-        <span className={`insight-r-badge ${rClass}`}>DIA r = {rLabel}</span>
+        <span className={`insight-r-badge ${tier.badgeClass}`}>DIA r = {rLabel}</span>
         <span className="insight-n">{n} paired days</span>
       </div>
       <div className="insight-bar-track">

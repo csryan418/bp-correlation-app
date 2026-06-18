@@ -23,6 +23,90 @@ function pearson(xs, ys) {
   return num / denom;
 }
 
+// ── Significance helpers (exact two-tailed t-test on Pearson r) ──
+// Lanczos log-gamma, Numerical Recipes betacf/betai for the regularized
+// incomplete beta function — used to evaluate the Student-t tail exactly.
+function gammaln(xx) {
+  const cof = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let x = xx, y = xx;
+  let tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (let j = 0; j < 6; j++) { y += 1; ser += cof[j] / y; }
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+
+function betacf(a, b, x) {
+  const MAXIT = 200, EPS = 3e-12, FPMIN = 1e-300;
+  const qab = a + b, qap = a + 1, qam = a - 1;
+  let c = 1, d = 1 - qab * x / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m <= MAXIT; m++) {
+    const m2 = 2 * m;
+    let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d; h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const del = d * c; h *= del;
+    if (Math.abs(del - 1) < EPS) break;
+  }
+  return h;
+}
+
+function betai(a, b, x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const bt = Math.exp(
+    gammaln(a + b) - gammaln(a) - gammaln(b) + a * Math.log(x) + b * Math.log(1 - x)
+  );
+  return x < (a + 1) / (a + b + 2)
+    ? bt * betacf(a, b, x) / a
+    : 1 - bt * betacf(b, a, 1 - x) / b;
+}
+
+// Two-tailed p-value that a Pearson r of magnitude |r| arose from zero
+// correlation, given n paired observations (df = n - 2).
+function corrPValue(r, n) {
+  const df = n - 2;
+  if (df <= 0) return 1;
+  const rr = Math.min(Math.abs(r), 0.9999999999);
+  const t = rr * Math.sqrt(df / (1 - rr * rr));
+  return betai(0.5 * df, 0.5, df / (df + t * t));
+}
+
+// Critical r at p < 0.05 (two-tailed) for n observations — the smallest |r|
+// that would be statistically significant. Found by bisection on corrPValue,
+// which is monotonically decreasing in r. Returns null when df <= 0.
+function criticalR(n, alpha = 0.05) {
+  const df = n - 2;
+  if (df <= 0) return null;
+  let lo = 0, hi = 0.9999999999;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (corrPValue(mid, n) < alpha) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Sample variance (n-1 denominator). Returns null for fewer than 2 values, so
+// downstream two-sample tests can detect untestable groups. Exposed alongside
+// the group means so the client can run a Welch's t-test.
+function sampleVariance(xs) {
+  const n = xs.length;
+  if (n < 2) return null;
+  const mean = xs.reduce((s, v) => s + v, 0) / n;
+  let ss = 0;
+  for (const v of xs) ss += (v - mean) * (v - mean);
+  return ss / (n - 1);
+}
+
 // Build paired arrays by aligning on date, discarding days missing either value.
 function pairByDate(aMap, bMap) {
   const xs = [], ys = [];
@@ -295,12 +379,18 @@ export function getFullInsights(req, res) {
   function calcCorr(varMap, name, unit) {
     const { xs, dias, syss } = buildPairs(varMap);
     const n = xs.length;
+    const rDia = pearson7(xs, dias);
+    // Significance is judged on the raw (unrounded) diastolic r vs the critical
+    // r for this sample size; n < 7 makes rDia null and leaves it non-significant.
+    const critR = rDia != null ? criticalR(n) : null;
     return {
       variable: name,
       unit,
-      r_diastolic: round2(pearson7(xs, dias)),
+      r_diastolic: round2(rDia),
       r_systolic: round2(pearson7(xs, syss)),
       n,
+      significant_diastolic: rDia != null && critR != null && Math.abs(rDia) >= critR,
+      crit_r_diastolic: critR != null ? round2(critR) : null,
     };
   }
 
@@ -444,6 +534,10 @@ export function getFullInsights(req, res) {
     const avgSysHigh = highDays.length > 0 ? highDays.reduce((s, p) => s + p.systolic,  0) / highDays.length : null;
     const avgSysLow  = lowDays.length  > 0 ? lowDays.reduce( (s, p) => s + p.systolic,  0) / lowDays.length  : null;
 
+    // Per-group n and diastolic variance for a two-sample (Welch) test client-side.
+    const varDiaHigh = sampleVariance(highDays.map(p => p.diastolic));
+    const varDiaLow  = sampleVariance(lowDays.map(p => p.diastolic));
+
     const highDatesSorted = highDays.map(p => p.date).sort();
     const lastHighSodiumDate = highDatesSorted.length > 0 ? highDatesSorted[highDatesSorted.length - 1] : null;
 
@@ -464,6 +558,10 @@ export function getFullInsights(req, res) {
       avg_dia_low:   round2(avgDiaLow),
       avg_sys_high:  round2(avgSysHigh),
       avg_sys_low:   round2(avgSysLow),
+      n_high:        highDays.length,
+      n_low:         lowDays.length,
+      var_dia_high:  round2(varDiaHigh),
+      var_dia_low:   round2(varDiaLow),
       difference:    avgDiaHigh != null && avgDiaLow != null ? round2(avgDiaHigh - avgDiaLow) : null,
       paired_days:   paired.length,
       last_high_sodium_date: lastHighSodiumDate,
@@ -580,6 +678,10 @@ export function getFullInsights(req, res) {
       ? notTakenPaired.reduce((s, d) => s + bpNextMorning.get(d).systolic,  0) / daysNotTaken
       : null;
 
+    // Per-group diastolic variance for a two-sample (Welch) test client-side.
+    const varDiaTaken    = sampleVariance(takenPaired.map(d => bpNextMorning.get(d).diastolic));
+    const varDiaNotTaken = sampleVariance(notTakenPaired.map(d => bpNextMorning.get(d).diastolic));
+
     supplementCorrelations.push({
       supplement_id: supp.id,
       name: supp.name,
@@ -587,6 +689,8 @@ export function getFullInsights(req, res) {
       avg_systolic_taken:      round2(avgSysTaken),
       avg_diastolic_not_taken: round2(avgDiaNotTaken),
       avg_systolic_not_taken:  round2(avgSysNotTaken),
+      var_diastolic_taken:     round2(varDiaTaken),
+      var_diastolic_not_taken: round2(varDiaNotTaken),
       days_taken:    daysTaken,
       days_not_taken: daysNotTaken,
       difference: avgDiaNotTaken != null ? round2(avgDiaTaken - avgDiaNotTaken) : null,

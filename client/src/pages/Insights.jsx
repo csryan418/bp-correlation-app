@@ -1,6 +1,8 @@
 import { Component, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Info } from 'lucide-react'
 import { api } from '../api/client'
+import { strengthTier } from '../utils/correlationStrength'
+import { meanDiffSignificance } from '../utils/meanDiffSignificance'
 import './Insights.css'
 
 // ── Date helpers ──────────────────────────────────────────────
@@ -214,18 +216,18 @@ function ScatterChart({ data, xLabel, xUnit, rDiastolic, rSystolic }) {
 
 // ── ScatterCard ───────────────────────────────────────────────
 
-function scatterSummary(xLabel, rDiastolic, rSystolic, n) {
+function scatterSummary(xLabel, corr, n) {
+  const rDiastolic = corr?.r_diastolic ?? null
+  const rSystolic = corr?.r_systolic ?? null
   if (n < 7 || rDiastolic == null) return null
-  const abs = Math.abs(rDiastolic)
+
+  const tier = strengthTier(corr)
   let main
-  if (abs < 0.05) {
-    main = `No meaningful association found between ${xLabel.toLowerCase()} and next-morning diastolic yet (${n} days).`
+  if (!tier.adjective) {
+    main = `Not enough data yet to judge this relationship (n=${n}).`
   } else {
-    const strength = abs >= 0.30 ? 'strongly associated'
-      : abs >= 0.15 ? 'moderately associated'
-      : 'weakly associated'
     const dir = rDiastolic < 0 ? 'lower' : 'higher'
-    main = `Higher ${xLabel.toLowerCase()} is ${strength} with ${dir} next-morning diastolic (DIA r = ${fmtR(rDiastolic)}, ${n} days).`
+    main = `Higher ${xLabel.toLowerCase()} is ${tier.adjective} associated with ${dir} next-morning diastolic (DIA r = ${fmtR(rDiastolic)}, ${n} days).`
   }
   let note = null
   if (rSystolic != null && Math.abs(rSystolic) >= 0.20 && Math.sign(rSystolic) !== Math.sign(rDiastolic)) {
@@ -234,16 +236,15 @@ function scatterSummary(xLabel, rDiastolic, rSystolic, n) {
   return { main, note }
 }
 
-function ScatterCard({ title, data, xLabel, xUnit, rDiastolic, rSystolic }) {
+function ScatterCard({ title, data, xLabel, xUnit, corr }) {
   const n = data?.length ?? 0
   const MIN_DAYS = 7
+  const rDiastolic = corr?.r_diastolic ?? null
+  const rSystolic = corr?.r_systolic ?? null
 
-  const rColor = rDiastolic == null ? 'ins-r--none'
-    : Math.abs(rDiastolic) >= 0.4 ? 'ins-r--strong'
-    : Math.abs(rDiastolic) >= 0.2 ? 'ins-r--moderate'
-    : 'ins-r--weak'
+  const rColor = strengthTier(corr).badgeClass
 
-  const summary = scatterSummary(xLabel, rDiastolic, rSystolic, n)
+  const summary = scatterSummary(xLabel, corr, n)
 
   return (
     <section className="ins-chart-card">
@@ -351,28 +352,21 @@ function CorrelationCard({ corr, insightText }) {
   const hasData = n >= MIN_DAYS && r_diastolic != null
 
   const absR = r_diastolic != null ? Math.abs(r_diastolic) : 0
-  const barColor = !hasData ? 'var(--border-subtle)'
-    : r_diastolic < -0.05 ? 'var(--green)'
-    : r_diastolic >  0.05 ? 'var(--red)'
-    : 'var(--text-muted)'
+  const tier = strengthTier(corr)
 
-  const rClass = !hasData ? 'ins-r--none'
-    : absR >= 0.4 ? 'ins-r--strong'
-    : absR >= 0.2 ? 'ins-r--moderate'
-    : 'ins-r--weak'
+  // Bars and colors are gated on significance, matching the legend.
+  const barColor = !tier.significant ? 'var(--text-muted)'
+    : r_diastolic < 0 ? 'var(--green)'
+    : 'var(--red)'
 
-  const dotClass = !hasData || absR < 0.15 ? 'ins-dot--gray'
-    : absR >= 0.30 ? 'ins-dot--green'
-    : 'ins-dot--amber'
+  const rClass = tier.badgeClass
+  const dotClass = tier.dotClass
 
   let direction = ''
   if (hasData) {
-    if (Math.abs(r_diastolic) < 0.05) {
-      direction = 'No meaningful association detected'
-    } else {
-      const effect = r_diastolic < 0 ? 'Lower' : 'Higher'
-      direction = `Higher ${variable} → ${effect} diastolic BP`
-    }
+    direction = tier.significant
+      ? `Higher ${variable} → ${r_diastolic < 0 ? 'Lower' : 'Higher'} diastolic BP`
+      : 'No clear association yet'
   }
 
   return (
@@ -432,17 +426,19 @@ function MealSodiumCard({ item }) {
     )
   }
 
-  const diff = item.difference ?? null
-  let insight, dotClass
-  if (diff !== null && diff >= 3) {
+  const sig = meanDiffSignificance({
+    nA: item.n_high, meanA: item.avg_dia_high, varA: item.var_dia_high,
+    nB: item.n_low,  meanB: item.avg_dia_low,  varB: item.var_dia_low,
+  })
+  const diff = sig.diff
+  const dotClass = sig.dotClass
+  let insight
+  if (!sig.significant) {
+    insight = `No meaningful difference in next-morning diastolic based on ${item.meal_type.toLowerCase()} sodium levels yet (n=${item.paired_days}).`
+  } else if (diff > 0) {
     insight = `On high-sodium ${item.meal_type.toLowerCase()} days, your next-morning diastolic averaged ${Math.round(item.avg_dia_high)} mmHg vs ${Math.round(item.avg_dia_low)} mmHg on lower-sodium days — a ${Math.round(diff)} mmHg difference.`
-    dotClass = 'ins-dot--red'
-  } else if (diff !== null && diff <= -3) {
-    insight = `Surprisingly, high-sodium ${item.meal_type.toLowerCase()} days were associated with lower next-morning diastolic (${Math.abs(Math.round(diff))} mmHg lower). Worth watching as more data accumulates.`
-    dotClass = 'ins-dot--green'
   } else {
-    insight = `No meaningful difference in next-morning diastolic based on ${item.meal_type.toLowerCase()} sodium levels yet.`
-    dotClass = 'ins-dot--gray'
+    insight = `Surprisingly, high-sodium ${item.meal_type.toLowerCase()} days were associated with lower next-morning diastolic (${Math.abs(Math.round(diff))} mmHg lower). Worth watching as more data accumulates.`
   }
 
   let formattedDate = null
@@ -499,23 +495,20 @@ function MealSodiumCard({ item }) {
 
 function generateSummaryBullets(correlations) {
   const qualifying = correlations
-    .filter(c => c.n >= 15 && c.r_diastolic != null && Math.abs(c.r_diastolic) >= 0.20)
+    .filter(c => strengthTier(c).significant)
     .sort((a, b) => Math.abs(b.r_diastolic) - Math.abs(a.r_diastolic))
     .slice(0, 5)
 
   if (qualifying.length < 2) return null
 
   return qualifying.map((c, i) => {
-    const abs = Math.abs(c.r_diastolic)
-    const str = abs >= 0.40 ? 'strongly associated'
-      : abs >= 0.25 ? 'moderately associated'
-      : 'weakly associated'
+    const { adjective } = strengthTier(c)
     const dir = c.r_diastolic < 0 ? 'lower' : 'higher'
 
     if (i === 0) {
-      return `${c.variable} shows the strongest signal in your data — higher values are ${str} with ${dir} next-morning diastolic BP.`
+      return `${c.variable} shows the strongest signal in your data — higher values are ${adjective} associated with ${dir} next-morning diastolic BP.`
     }
-    return `Higher ${c.variable} is also ${str} with ${dir} next-morning diastolic BP.`
+    return `Higher ${c.variable} is also ${adjective} associated with ${dir} next-morning diastolic BP.`
   })
 }
 
@@ -581,17 +574,19 @@ function SupplementCorrelationCard({ supp }) {
     )
   }
 
-  const diff = supp.difference ?? null
-  let insight, dotClass
-  if (diff !== null && diff <= -3) {
+  const sig = meanDiffSignificance({
+    nA: supp.days_taken,     meanA: supp.avg_diastolic_taken,     varA: supp.var_diastolic_taken,
+    nB: supp.days_not_taken, meanB: supp.avg_diastolic_not_taken, varB: supp.var_diastolic_not_taken,
+  })
+  const diff = sig.diff
+  const dotClass = sig.dotClass
+  let insight
+  if (!sig.significant) {
+    insight = `No meaningful difference in next-morning diastolic on days you take ${supp.name} yet (n=${supp.days_taken})`
+  } else if (diff < 0) {
     insight = `Taking ${supp.name} is associated with lower next-morning diastolic (${Math.abs(Math.round(diff))} mmHg lower)`
-    dotClass = 'ins-dot--green'
-  } else if (diff !== null && diff >= 3) {
-    insight = `Taking ${supp.name} is associated with higher next-morning diastolic (${Math.round(diff)} mmHg higher)`
-    dotClass = 'ins-dot--red'
   } else {
-    insight = `No meaningful difference in next-morning diastolic on days you take ${supp.name}`
-    dotClass = 'ins-dot--gray'
+    insight = `Taking ${supp.name} is associated with higher next-morning diastolic (${Math.round(diff)} mmHg higher)`
   }
 
   const diaTaken = supp.avg_diastolic_taken != null ? Math.round(supp.avg_diastolic_taken) : '—'
@@ -694,13 +689,16 @@ export default function Insights() {
         </p>
         <div className="ins-traffic-legend">
           <span className="ins-traffic-legend-item">
-            <span className="ins-traffic-dot ins-dot--green" /> Meaningful signal (r ≥ 0.30)
+            <span className="ins-traffic-dot ins-dot--green" /> Statistically meaningful (clears significance for its sample size)
           </span>
           <span className="ins-traffic-legend-item">
-            <span className="ins-traffic-dot ins-dot--amber" /> Weak signal (r 0.15–0.29)
+            <span className="ins-traffic-dot ins-dot--amber" /> Significant but small effect
           </span>
           <span className="ins-traffic-legend-item">
-            <span className="ins-traffic-dot ins-dot--gray" /> No clear signal yet
+            <span className="ins-traffic-dot ins-dot--gray" /> Not enough data yet
+          </span>
+          <span className="ins-traffic-legend-item" style={{width: '100%'}}>
+            Bars/colors require statistical significance at the current number of days — many will stay gray until more data accumulates.
           </span>
           <span className="ins-traffic-legend-item" style={{width: '100%'}}>
             Bar length = correlation strength · Red = raises BP · Green = lowers BP
@@ -787,32 +785,28 @@ export default function Insights() {
             data={scatterData.sodium}
             xLabel="Sodium"
             xUnit="mg"
-            rDiastolic={correlations.find(c => c.variable === 'Daily Sodium')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Daily Sodium')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Daily Sodium')}
           />
           <ScatterCard
             title="Daily Potassium"
             data={scatterData.potassium}
             xLabel="Potassium"
             xUnit="mg"
-            rDiastolic={correlations.find(c => c.variable === 'Daily Potassium')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Daily Potassium')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Daily Potassium')}
           />
           <ScatterCard
             title="Daily Magnesium"
             data={scatterData.magnesium}
             xLabel="Magnesium"
             xUnit="mg"
-            rDiastolic={correlations.find(c => c.variable === 'Daily Magnesium')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Daily Magnesium')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Daily Magnesium')}
           />
           <ScatterCard
             title="Sodium:Potassium Ratio"
             data={scatterData.nakRatio}
             xLabel="Na:K ratio"
             xUnit=":1"
-            rDiastolic={correlations.find(c => c.variable === 'Sodium:Potassium Ratio')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Sodium:Potassium Ratio')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Sodium:Potassium Ratio')}
           />
         </div>
       </section>
@@ -829,24 +823,21 @@ export default function Insights() {
             data={scatterData.hrv}
             xLabel="HRV"
             xUnit="ms"
-            rDiastolic={correlations.find(c => c.variable === 'HRV Average')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'HRV Average')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'HRV Average')}
           />
           <ScatterCard
             title="Deep Sleep"
             data={scatterData.deepSleep}
             xLabel="Deep sleep"
             xUnit="min"
-            rDiastolic={correlations.find(c => c.variable === 'Deep Sleep')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Deep Sleep')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Deep Sleep')}
           />
           <ScatterCard
             title="Readiness Score"
             data={scatterData.readiness}
             xLabel="Readiness"
             xUnit=""
-            rDiastolic={correlations.find(c => c.variable === 'Readiness Score')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Readiness Score')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Readiness Score')}
           />
         </div>
       </section>
@@ -863,32 +854,28 @@ export default function Insights() {
             data={scatterData.activeCalories}
             xLabel="Active cal"
             xUnit="kcal"
-            rDiastolic={correlations.find(c => c.variable === 'Active Calories')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Active Calories')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Active Calories')}
           />
           <ScatterCard
             title="Activity Score"
             data={scatterData.activityScore}
             xLabel="Activity score"
             xUnit=""
-            rDiastolic={correlations.find(c => c.variable === 'Activity Score')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Activity Score')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Activity Score')}
           />
           <ScatterCard
             title="Top Workout Duration"
             data={scatterData.workoutDuration}
             xLabel="Workout duration"
             xUnit="min"
-            rDiastolic={correlations.find(c => c.variable === 'Top Workout Duration')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Top Workout Duration')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Top Workout Duration')}
           />
           <ScatterCard
             title="Top Workout Calories"
             data={scatterData.workoutCalories}
             xLabel="Workout calories"
             xUnit="kcal"
-            rDiastolic={correlations.find(c => c.variable === 'Top Workout Calories')?.r_diastolic}
-            rSystolic={correlations.find(c => c.variable === 'Top Workout Calories')?.r_systolic}
+            corr={correlations.find(c => c.variable === 'Top Workout Calories')}
           />
         </div>
       </section>
