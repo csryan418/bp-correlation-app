@@ -8,6 +8,9 @@ export function syncWorkouts(req, res) {
   }
 
   const db = getDb();
+  const exists = db.prepare(
+    `SELECT 1 FROM workouts WHERE start_time = ? AND workout_type = ? LIMIT 1`
+  );
   const insert = db.prepare(`
     INSERT OR IGNORE INTO workouts
       (hk_uuid, workout_type, start_time, end_time, duration_minutes, calories, distance_meters, avg_heart_rate)
@@ -18,6 +21,12 @@ export function syncWorkouts(req, res) {
   let inserted = 0;
   const syncMany = db.transaction((items) => {
     for (const w of items) {
+      // Dedup on the natural key (start_time + workout_type): the client (BPHealthSync)
+      // re-sends the same physical workout with a non-stable hk_uuid on a later sync, so
+      // hk_uuid alone lets duplicates through. hk_uuid is still stored — just no longer
+      // the dedup key. First-write-wins: a re-synced corrected version of an existing
+      // (start_time, workout_type) is skipped, not updated.
+      if (exists.get(w.start_time, w.workout_type)) continue;
       const result = insert.run({
         hk_uuid: w.hk_uuid,
         workout_type: w.workout_type,
