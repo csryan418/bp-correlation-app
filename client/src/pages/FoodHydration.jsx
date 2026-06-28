@@ -33,6 +33,84 @@ function localDateString() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const BASKET_KEY_PREFIX = 'fh-basket-v2:'
+// 30-day retention. writeBasketFor restamps savedAt on every persist (including the save
+// when switching away from a date), so this TTL means "untouched for 30 days," not
+// "staged 30 days ago" — intentional, erring toward never losing a draft.
+const BASKET_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+function basketKey(date) {
+  return `${BASKET_KEY_PREFIX}${date}`
+}
+
+// Returns { items, mealType, savedAt } for a date, or null if absent/malformed.
+function loadBasketFor(date) {
+  try {
+    const raw = localStorage.getItem(basketKey(date))
+    if (!raw) return null
+    const saved = JSON.parse(raw)
+    return saved && Array.isArray(saved.items) ? saved : null
+  } catch {
+    return null
+  }
+}
+
+function writeBasketFor(date, items, mealType) {
+  // Invariant: a fh-basket-v2:DATE key exists IFF that date has staged items. Persisting
+  // an empty basket removes the key instead, so "no key for an empty date" self-enforces
+  // across every call path (persist effect, date-switch save, etc.).
+  try {
+    if (!items || items.length === 0) {
+      localStorage.removeItem(basketKey(date))
+      return
+    }
+    localStorage.setItem(basketKey(date), JSON.stringify({
+      items,
+      mealType,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch {}
+}
+
+function clearBasketFor(date) {
+  try { localStorage.removeItem(basketKey(date)) } catch {}
+}
+
+// One-time housekeeping, run on mount.
+function migrateAndCleanupBaskets() {
+  // Migrate the old single-key (v1) basket into the per-date (v2) scheme. v1 logged
+  // against its `selectedDate`, so that is the basket's date in v2 (savedDate was only
+  // the write-day used by the old stale guard).
+  try {
+    const raw = localStorage.getItem('fh-basket-v1')
+    if (raw != null) {
+      let old = null
+      try { old = JSON.parse(raw) } catch {}
+      if (old && Array.isArray(old.items) && old.items.length > 0) {
+        const date = old.selectedDate || old.savedDate
+        const recent = date && Date.parse(`${date}T00:00:00`) >= Date.now() - BASKET_TTL_MS
+        if (recent && !localStorage.getItem(basketKey(date))) {
+          writeBasketFor(date, old.items, old.mealType ?? 'Breakfast')
+        }
+      }
+      localStorage.removeItem('fh-basket-v1')
+    }
+  } catch {}
+  // Drop per-date baskets whose savedAt is older than the TTL (generous backstop).
+  try {
+    const cutoff = Date.now() - BASKET_TTL_MS
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (!key || !key.startsWith(BASKET_KEY_PREFIX)) continue
+      try {
+        const saved = JSON.parse(localStorage.getItem(key))
+        const ts = saved?.savedAt ? Date.parse(saved.savedAt) : NaN
+        if (!Number.isNaN(ts) && ts < cutoff) localStorage.removeItem(key)
+      } catch {}
+    }
+  } catch {}
+}
+
 function gramsToFlOz(grams) {
   return Math.round((grams / 29.57) * 2) / 2
 }
@@ -88,12 +166,12 @@ export default function FoodHydration() {
           <button className="fh-date-nav-btn" onClick={() => navigateDate(1)} disabled={isToday} aria-label="Next day">›</button>
         </div>
       </header>
-      <FoodSection selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+      <FoodSection selectedDate={selectedDate} />
     </div>
   )
 }
 
-function FoodSection({ selectedDate, setSelectedDate }) {
+function FoodSection({ selectedDate }) {
   const today = localDateString()
   const isToday = selectedDate === today
 
@@ -126,6 +204,8 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
   // Basket — items staged for "Log Meal"
   const [basket, setBasket] = useState([])
+  const basketPersistReady = useRef(false)
+  const basketDateRef = useRef(selectedDate)
   const [loggingMeal, setLoggingMeal] = useState(false)
 
   // Toast & log
@@ -193,6 +273,41 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const audioChunksRef = useRef([])
 
   useEffect(() => { fetchSavedMeals() }, [])
+
+  // Mount: migrate the old single-key (v1) basket into the per-date scheme and prune
+  // stale per-date baskets, then load whatever is stored for the initial date.
+  useEffect(() => {
+    migrateAndCleanupBaskets()
+    const loaded = loadBasketFor(selectedDate)
+    if (loaded) {
+      if (loaded.items.length > 0) setBasket(loaded.items)
+      if (loaded.mealType) setActiveMealType(loaded.mealType)
+    }
+    basketDateRef.current = selectedDate
+  }, [])
+
+  // Persist the current basket under ITS date's key (basketDateRef) on every basket/meal
+  // change. Skip the first run so mount/hydration can't clobber stored data. Always write
+  // (even an empty items array) so incidentally emptying the basket survives a tab
+  // discard; storage is only removed on the two intentional discards (Log success, Clear).
+  useEffect(() => {
+    if (!basketPersistReady.current) { basketPersistReady.current = true; return }
+    writeBasketFor(basketDateRef.current, basket, activeMealType)
+  }, [basket, activeMealType])
+
+  // Date switch: save the OUTGOING date's basket, then load the INCOMING date's (empty
+  // if none). The key IS the date, so items never cross dates. A ref tracks the previous
+  // date so the outgoing basket is saved before the incoming one is loaded.
+  useEffect(() => {
+    const prevDate = basketDateRef.current
+    if (prevDate === selectedDate) return
+    writeBasketFor(prevDate, basket, activeMealType)
+    const loaded = loadBasketFor(selectedDate)
+    basketDateRef.current = selectedDate
+    setBasket(loaded?.items ?? [])
+    if (loaded?.mealType) setActiveMealType(loaded.mealType)
+  }, [selectedDate])
+
   useEffect(() => {
     fetchLog(selectedDate)
     setEditingId(null)
@@ -526,6 +641,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
         })
       }
       setBasket([])
+      clearBasketFor(selectedDate)
       showToast()
       fetchLog(selectedDate)
     } catch { } finally {
@@ -1145,7 +1261,7 @@ function FoodSection({ selectedDate, setSelectedDate }) {
                 <button className="btn-primary" onClick={handleLogMeal} disabled={loggingMeal}>
                   {loggingMeal ? 'Logging…' : `Log ${activeMealType}`}
                 </button>
-                <button className="fs-cancel-btn" onClick={() => { setBasket([]); setShowSaveMeal(false); setSavingMealName('') }}>Clear</button>
+                <button className="fs-cancel-btn" onClick={() => { setBasket([]); clearBasketFor(selectedDate); setShowSaveMeal(false); setSavingMealName('') }}>Clear</button>
                 {basket.length >= 2 && !showSaveMeal && (
                   <button className="fh-save-as-meal-btn" onClick={() => setShowSaveMeal(true)}>
                     Save as Meal
