@@ -135,19 +135,11 @@ function FoodSection({ selectedDate, setSelectedDate }) {
 
   // Edit in-place
   const [editingId, setEditingId] = useState(null)
-  const [editPortions, setEditPortions] = useState([])
-  const [editBasePer100g, setEditBasePer100g] = useState(null)
-  const [editPortionsLoading, setEditPortionsLoading] = useState(false)
-  const [editPortionIdx, setEditPortionIdx] = useState(0)
   const [editQuantity, setEditQuantity] = useState(1)
   const [editSodium, setEditSodium] = useState('')
   const [editPotassium, setEditPotassium] = useState('')
   const [editMagnesium, setEditMagnesium] = useState('')
   const [editSaving, setEditSaving] = useState(false)
-  const [editIsBeverage, setEditIsBeverage] = useState(false)
-  const [editSodiumBase, setEditSodiumBase] = useState(null)
-  const [editPotassiumBase, setEditPotassiumBase] = useState(null)
-  const [editMagnesiumBase, setEditMagnesiumBase] = useState(null)
   const [editNutrientsEdited, setEditNutrientsEdited] = useState(false)
 
   // Manual entry
@@ -542,61 +534,33 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   }
 
   // Edit in-place handlers (unchanged)
-  async function openEdit(entry) {
+  function openEdit(entry) {
     if (editingId === entry.id) { setEditingId(null); return }
     setEditingId(entry.id)
-    setEditPortions([])
-    setEditBasePer100g(null)
-    setEditPortionIdx(0)
     const qty = parseFloat(entry.serving_size) || 1
     setEditQuantity(qty)
-    setEditSodiumBase(entry.sodium_mg    != null ? entry.sodium_mg    / qty : null)
-    setEditPotassiumBase(entry.potassium_mg != null ? entry.potassium_mg / qty : null)
-    setEditMagnesiumBase(entry.magnesium_mg != null ? entry.magnesium_mg / qty : null)
-    setEditSodium(String(Math.round(entry.sodium_mg    || 0)))
-    setEditPotassium(String(Math.round(entry.potassium_mg || 0)))
-    setEditMagnesium(String(Math.round(entry.magnesium_mg || 0)))
+    // Stopgap (pending migration 017: persist portion grams + label) — seed the
+    // editor straight from the persisted, portion-adjusted row, preserving the
+    // null vs 0 distinction so a no-op save writes the row back unchanged.
+    // No USDA portions fetch on open: the recompute path is gone, so edit-open
+    // is instant and works offline.
+    setEditSodium(entry.sodium_mg       != null ? String(Math.round(entry.sodium_mg))    : '')
+    setEditPotassium(entry.potassium_mg != null ? String(Math.round(entry.potassium_mg)) : '')
+    setEditMagnesium(entry.magnesium_mg != null ? String(Math.round(entry.magnesium_mg)): '')
     setEditNutrientsEdited(false)
-    async function loadPortions(fdcId) {
-      const data = await api.getFoodPortions(fdcId)
-      const portionList = dedupePortions(data.portions ?? [])
-      setEditPortions(portionList)
-      setEditBasePer100g(data.basePer100g ?? null)
-      setEditIsBeverage(data.isBeverage ?? false)
-      const defaultIdx = portionList.findIndex(p => p.label !== '100g')
-      setEditPortionIdx(defaultIdx >= 0 ? defaultIdx : 0)
-    }
-
-    const fdcId = parseInt(entry.fdc_id)
-    setEditPortionsLoading(true)
-    try {
-      if (fdcId) {
-        await loadPortions(fdcId)
-      } else if (entry.description) {
-        // fdc_id not stored — look it up by name (USDA descriptions are exact)
-        const results = await api.searchFood(entry.description)
-        const match = Array.isArray(results) && results[0]
-        if (match?.fdcId) await loadPortions(match.fdcId)
-      }
-    } catch { } finally {
-      setEditPortionsLoading(false)
-    }
   }
 
   async function handleEditSave(entry) {
     setEditSaving(true)
     try {
-      let sodium, potassium, magnesium
-      if (editPortions.length > 0 && editBasePer100g && !editNutrientsEdited) {
-        const grams = editPortions[editPortionIdx]?.grams ?? 100
-        sodium    = calcMineral(editBasePer100g.sodium_mg,    grams, editQuantity)
-        potassium = calcMineral(editBasePer100g.potassium_mg, grams, editQuantity)
-        magnesium = calcMineral(editBasePer100g.magnesium_mg, grams, editQuantity)
-      } else {
-        sodium    = parseFloat(editSodium)    || null
-        potassium = parseFloat(editPotassium) || null
-        magnesium = parseFloat(editMagnesium) || null
-      }
+      // Stopgap (pending migration 017: persist portion grams + label) — the
+      // logged portion's grams were never stored, so the old base×default-portion
+      // recompute corrupted the row on a plain open+save. Persist exactly the
+      // displayed/edited mineral values; manual mg entry is the only trusted way
+      // to change them until grams are stored.
+      const sodium    = parseManualMineral(editSodium)
+      const potassium = parseManualMineral(editPotassium)
+      const magnesium = parseManualMineral(editMagnesium)
       await api.updateFoodLog(entry.id, { servings: editQuantity, sodium_mg: sodium, potassium_mg: potassium, magnesium_mg: magnesium })
       setEditingId(null)
       fetchLog(selectedDate)
@@ -836,32 +800,23 @@ function FoodSection({ selectedDate, setSelectedDate }) {
   const potassiumTotal = todayLog.reduce((s, e) => s + (e.potassium_mg || 0), 0)
   const magnesiumTotal = todayLog.reduce((s, e) => s + (e.magnesium_mg || 0), 0)
 
-  // Edit panel computed values
-  const editGrams = editPortions[editPortionIdx]?.grams ?? 100
-  const editComputedSodium    = editBasePer100g ? calcMineral(editBasePer100g.sodium_mg,    editGrams, editQuantity) : null
-  const editComputedPotassium = editBasePer100g ? calcMineral(editBasePer100g.potassium_mg, editGrams, editQuantity) : null
-  const editComputedMagnesium = editBasePer100g ? calcMineral(editBasePer100g.magnesium_mg, editGrams, editQuantity) : null
-
   // Basket totals
   const basketSodium    = basket.reduce((s, i) => s + (i.sodiumPerUnit    != null ? Math.round(i.sodiumPerUnit    * i.quantity) : 0), 0)
   const basketPotassium = basket.reduce((s, i) => s + (i.potassiumPerUnit != null ? Math.round(i.potassiumPerUnit * i.quantity) : 0), 0)
   const basketMagnesium = basket.reduce((s, i) => s + (i.magnesiumPerUnit != null ? Math.round(i.magnesiumPerUnit * i.quantity) : 0), 0)
 
   function handleEditManualQtyChange(val) {
+    // Stopgap (pending migration 017): quantity changes no longer auto-scale the
+    // mineral tiles. Grams per portion aren't stored, so any auto-recompute would
+    // run against an unverified base/portion. Quantity is still persisted as
+    // servings; edit the mg fields manually to change mineral values.
     setEditQuantity(val)
-    const q = parseFloat(val) || 0
-    if (editSodiumBase    != null) setEditSodium(q > 0 ? String(Math.round(editSodiumBase    * q)) : '')
-    if (editPotassiumBase != null) setEditPotassium(q > 0 ? String(Math.round(editPotassiumBase * q)) : '')
-    if (editMagnesiumBase != null) setEditMagnesium(q > 0 ? String(Math.round(editMagnesiumBase * q)) : '')
   }
 
   const editProps = {
-    editingId, editPortionsLoading, editPortions, editBasePer100g,
-    editPortionIdx, setEditPortionIdx, editQuantity, setEditQuantity,
+    editingId, editQuantity, setEditQuantity,
     editSodium, setEditSodium, editPotassium, setEditPotassium,
     editMagnesium, setEditMagnesium,
-    editComputedSodium, editComputedPotassium, editComputedMagnesium,
-    editIsBeverage,
     editNutrientsEdited, onSetEditNutrientsEdited: setEditNutrientsEdited,
     onEditManualQtyChange: handleEditManualQtyChange,
     editSaving, onEdit: openEdit, onEditSave: handleEditSave,
@@ -2149,14 +2104,10 @@ function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }
 
 function LogEntry({
   entry, editingId,
-  editPortionsLoading, editPortions, editBasePer100g,
-  editPortionIdx, setEditPortionIdx,
   editQuantity, setEditQuantity,
   editSodium, setEditSodium,
   editPotassium, setEditPotassium,
   editMagnesium, setEditMagnesium,
-  editComputedSodium, editComputedPotassium, editComputedMagnesium,
-  editIsBeverage,
   editNutrientsEdited, onSetEditNutrientsEdited,
   onEditManualQtyChange,
   editSaving, onEdit, onEditSave, onCancelEdit, onDelete,
@@ -2165,9 +2116,12 @@ function LogEntry({
   const [editActiveTile, setEditActiveTile] = useState(null)
   const [editDraftValue, setEditDraftValue] = useState('')
 
-  const effSodium    = editNutrientsEdited && editSodium    !== '' ? parseFloat(editSodium)    : (editBasePer100g ? editComputedSodium    : (parseFloat(editSodium)    || null))
-  const effPotassium = editNutrientsEdited && editPotassium !== '' ? parseFloat(editPotassium) : (editBasePer100g ? editComputedPotassium : (parseFloat(editPotassium) || null))
-  const effMagnesium = editNutrientsEdited && editMagnesium !== '' ? parseFloat(editMagnesium) : (editBasePer100g ? editComputedMagnesium : (parseFloat(editMagnesium) || null))
+  // Stopgap (pending migration 017): tiles show the persisted/edited values
+  // directly — never the base×default-portion recompute (editComputed*), which is
+  // unreliable until portion grams are stored.
+  const effSodium    = parseManualMineral(editSodium)
+  const effPotassium = parseManualMineral(editPotassium)
+  const effMagnesium = parseManualMineral(editMagnesium)
   return (
     <li className={`fs-log-entry${editingId === entry.id ? ' fs-log-entry--editing' : ''}`}>
       <div className="fs-log-entry-row">
@@ -2197,96 +2151,40 @@ function LogEntry({
 
       {editingId === entry.id && (
         <div className="fs-edit-panel">
-          {editPortionsLoading ? (
-            <div className="fs-confirm-loading">
-              <span className="fs-spinner fs-spinner--inline" />
-              <span className="fs-confirm-loading-text">Loading portions…</span>
-            </div>
-          ) : editPortions.length > 0 ? (
-            <>
-              <div className="fs-servings-row">
-                <label className="fs-servings-label">Quantity</label>
-                <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
-                  value={editQuantity}
-                  onFocus={e => e.target.select()}
-                  onChange={e => onEditManualQtyChange(e.target.value)}
-                  onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
-                <select className="fs-portion-select" value={editPortionIdx}
-                  onChange={e => setEditPortionIdx(parseInt(e.target.value))}>
-                  {editPortions.map((p, i) => {
-                    const name = p.portionDescription || p.description || p.modifier || 'Serving'
-                    return (
-                      <option key={i} value={i}>
-                        {p.label === '100g'
-                          ? '100g'
-                          : `${name}${editIsBeverage && !name.includes('fl oz') ? ` (${gramsToFlOz(p.grams)} fl oz)` : ''} · ${p.grams}g`}
-                      </option>
-                    )
-                  })}
-                </select>
-              </div>
-              <div className="fs-computed">
-                <ComputedMineral label="Sodium"    value={effSodium}
-                  edited={editNutrientsEdited && editSodium !== ''}
-                  editing={editActiveTile === 'sodium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('sodium');    setEditDraftValue(effSodium    != null ? String(Math.round(effSodium))    : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditSodium(editDraftValue);    if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
-                />
-                <ComputedMineral label="Potassium" value={effPotassium}
-                  edited={editNutrientsEdited && editPotassium !== ''}
-                  editing={editActiveTile === 'potassium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('potassium'); setEditDraftValue(effPotassium != null ? String(Math.round(effPotassium)) : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditPotassium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
-                />
-                <ComputedMineral label="Magnesium" value={effMagnesium}
-                  edited={editNutrientsEdited && editMagnesium !== ''}
-                  editing={editActiveTile === 'magnesium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('magnesium'); setEditDraftValue(effMagnesium != null ? String(Math.round(effMagnesium)) : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditMagnesium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="fs-servings-row">
-                <label className="fs-servings-label">Quantity</label>
-                <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
-                  value={editQuantity}
-                  onFocus={e => e.target.select()}
-                  onChange={e => onEditManualQtyChange(e.target.value)}
-                  onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
-              </div>
-              <div className="fs-computed">
-                <ComputedMineral label="Sodium"    value={effSodium}
-                  editing={editActiveTile === 'sodium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('sodium');    setEditDraftValue(effSodium    != null ? String(Math.round(effSodium))    : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditSodium(editDraftValue);    setEditActiveTile(null) }}
-                />
-                <ComputedMineral label="Potassium" value={effPotassium}
-                  editing={editActiveTile === 'potassium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('potassium'); setEditDraftValue(effPotassium != null ? String(Math.round(effPotassium)) : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditPotassium(editDraftValue); setEditActiveTile(null) }}
-                />
-                <ComputedMineral label="Magnesium" value={effMagnesium}
-                  editing={editActiveTile === 'magnesium'}
-                  draftValue={editDraftValue}
-                  onClickEdit={() => { setEditActiveTile('magnesium'); setEditDraftValue(effMagnesium != null ? String(Math.round(effMagnesium)) : '') }}
-                  onDraftChange={v => setEditDraftValue(v)}
-                  onCommit={() => { setEditMagnesium(editDraftValue); setEditActiveTile(null) }}
-                />
-              </div>
-            </>
-          )}
+          <div className="fs-servings-row">
+            <label className="fs-servings-label">Quantity</label>
+            <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
+              value={editQuantity}
+              onFocus={e => e.target.select()}
+              onChange={e => onEditManualQtyChange(e.target.value)}
+              onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
+          </div>
+          <div className="fs-computed">
+            <ComputedMineral label="Sodium"    value={effSodium}
+              edited={editNutrientsEdited && editSodium !== ''}
+              editing={editActiveTile === 'sodium'}
+              draftValue={editDraftValue}
+              onClickEdit={() => { setEditActiveTile('sodium');    setEditDraftValue(effSodium    != null ? String(Math.round(effSodium))    : '') }}
+              onDraftChange={v => setEditDraftValue(v)}
+              onCommit={() => { setEditSodium(editDraftValue);    if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+            />
+            <ComputedMineral label="Potassium" value={effPotassium}
+              edited={editNutrientsEdited && editPotassium !== ''}
+              editing={editActiveTile === 'potassium'}
+              draftValue={editDraftValue}
+              onClickEdit={() => { setEditActiveTile('potassium'); setEditDraftValue(effPotassium != null ? String(Math.round(effPotassium)) : '') }}
+              onDraftChange={v => setEditDraftValue(v)}
+              onCommit={() => { setEditPotassium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+            />
+            <ComputedMineral label="Magnesium" value={effMagnesium}
+              edited={editNutrientsEdited && editMagnesium !== ''}
+              editing={editActiveTile === 'magnesium'}
+              draftValue={editDraftValue}
+              onClickEdit={() => { setEditActiveTile('magnesium'); setEditDraftValue(effMagnesium != null ? String(Math.round(effMagnesium)) : '') }}
+              onDraftChange={v => setEditDraftValue(v)}
+              onCommit={() => { setEditMagnesium(editDraftValue); if (editDraftValue !== '') onSetEditNutrientsEdited(true); setEditActiveTile(null) }}
+            />
+          </div>
           <div className="fs-confirm-actions fs-edit-actions">
             <button className="btn-primary" onClick={() => onEditSave(entry)} disabled={editSaving}>
               {editSaving ? 'Saving…' : 'Save'}
