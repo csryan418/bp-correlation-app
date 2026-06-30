@@ -23,6 +23,17 @@ function parseManualMineral(raw) {
   return Number.isNaN(n) ? null : n
 }
 
+// Proportionally rescale a mineral from the value captured when the editor
+// opened. Always references the OPENING value (never a previously-scaled one),
+// so repeated quantity edits don't compound. Returns a string for the editor's
+// string-backed mineral state: a null opening stays null ('' -> parseManualMineral
+// -> null); a 0 opening stays 0. Rounds to integer mg to match display/storage.
+function scaleMineralForEditor(openingMineral, newQty, openingQty) {
+  if (openingMineral == null) return ''
+  if (!openingQty) return String(Math.round(openingMineral))
+  return String(Math.round(openingMineral * (newQty / openingQty)))
+}
+
 function formatLogDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -221,6 +232,12 @@ function FoodSection({ selectedDate }) {
   const [editMagnesium, setEditMagnesium] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editNutrientsEdited, setEditNutrientsEdited] = useState(false)
+  // Baseline captured when the editor opens; a quantity change rescales minerals
+  // proportionally from these, never from the running edited values.
+  const openingQtyRef = useRef(1)
+  const openingSodiumRef = useRef(null)
+  const openingPotassiumRef = useRef(null)
+  const openingMagnesiumRef = useRef(null)
 
   // Manual entry
   const [showManual, setShowManual] = useState(false)
@@ -655,6 +672,11 @@ function FoodSection({ selectedDate }) {
     setEditingId(entry.id)
     const qty = parseFloat(entry.serving_size) || 1
     setEditQuantity(qty)
+    // Capture the opening baseline for proportional quantity rescaling.
+    openingQtyRef.current = qty
+    openingSodiumRef.current = entry.sodium_mg
+    openingPotassiumRef.current = entry.potassium_mg
+    openingMagnesiumRef.current = entry.magnesium_mg
     // Stopgap (pending migration 017: persist portion grams + label) — seed the
     // editor straight from the persisted, portion-adjusted row, preserving the
     // null vs 0 distinction so a no-op save writes the row back unchanged.
@@ -921,12 +943,24 @@ function FoodSection({ selectedDate }) {
   const basketPotassium = basket.reduce((s, i) => s + (i.potassiumPerUnit != null ? Math.round(i.potassiumPerUnit * i.quantity) : 0), 0)
   const basketMagnesium = basket.reduce((s, i) => s + (i.magnesiumPerUnit != null ? Math.round(i.magnesiumPerUnit * i.quantity) : 0), 0)
 
-  function handleEditManualQtyChange(val) {
-    // Stopgap (pending migration 017): quantity changes no longer auto-scale the
-    // mineral tiles. Grams per portion aren't stored, so any auto-recompute would
-    // run against an unverified base/portion. Quantity is still persisted as
-    // servings; edit the mg fields manually to change mineral values.
+  // Live typing: update the quantity display only. Minerals are NOT rescaled per
+  // keystroke — that happens on commit (blur/Enter) so partial values (15→1→0)
+  // never scale against a transient number.
+  function handleEditQtyChange(val) {
     setEditQuantity(val)
+  }
+
+  // Commit (blur/Enter): normalize the quantity, then rescale all three minerals
+  // proportionally from the opening baseline — never chaining off a prior scale.
+  // newMineral = openingMineral * (newQty / openingQty); null stays null, 0 stays 0.
+  function handleEditQtyCommit(rawVal) {
+    const v = parseFloat(rawVal)
+    const newQty = isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2)))
+    setEditQuantity(newQty)
+    const openingQty = openingQtyRef.current
+    setEditSodium(scaleMineralForEditor(openingSodiumRef.current, newQty, openingQty))
+    setEditPotassium(scaleMineralForEditor(openingPotassiumRef.current, newQty, openingQty))
+    setEditMagnesium(scaleMineralForEditor(openingMagnesiumRef.current, newQty, openingQty))
   }
 
   const editProps = {
@@ -934,7 +968,7 @@ function FoodSection({ selectedDate }) {
     editSodium, setEditSodium, editPotassium, setEditPotassium,
     editMagnesium, setEditMagnesium,
     editNutrientsEdited, onSetEditNutrientsEdited: setEditNutrientsEdited,
-    onEditManualQtyChange: handleEditManualQtyChange,
+    onEditQtyChange: handleEditQtyChange, onEditQtyCommit: handleEditQtyCommit,
     editSaving, onEdit: openEdit, onEditSave: handleEditSave,
     onCancelEdit: () => setEditingId(null), onDelete: handleDelete,
   }
@@ -2225,7 +2259,7 @@ function LogEntry({
   editPotassium, setEditPotassium,
   editMagnesium, setEditMagnesium,
   editNutrientsEdited, onSetEditNutrientsEdited,
-  onEditManualQtyChange,
+  onEditQtyChange, onEditQtyCommit,
   editSaving, onEdit, onEditSave, onCancelEdit, onDelete,
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -2272,8 +2306,9 @@ function LogEntry({
             <input className="text-input text-input--narrow" type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
               value={editQuantity}
               onFocus={e => e.target.select()}
-              onChange={e => onEditManualQtyChange(e.target.value)}
-              onBlur={e => { const v = parseFloat(e.target.value); onEditManualQtyChange(String(isNaN(v) ? 1 : Math.max(0.25, parseFloat(v.toFixed(2))))) }} />
+              onChange={e => onEditQtyChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+              onBlur={e => onEditQtyCommit(e.target.value)} />
           </div>
           <div className="fs-computed">
             <ComputedMineral label="Sodium"    value={effSodium}
