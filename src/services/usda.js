@@ -64,6 +64,18 @@ export async function getOpenFoodFactsPortions(offId) {
   return { portions, basePer100g, isBeverage: false };
 }
 
+// USDA emits serving units inconsistently: plain ("g"/"ml") on some records, but
+// LanguaL measure-unit CODES ("GRM"/"MLT") on many Branded ones — the same class of
+// unresolved-code bug as the "10205" modifier. Normalize to canonical 'g' | 'ml'
+// before any gram conversion. An unrecognized code returns null so the caller warns
+// and falls through to 100g rather than silently mis-converting.
+function normalizeServingUnit(rawUnit) {
+  const u = String(rawUnit ?? '').trim().toLowerCase();
+  if (['g', 'grm', 'gram', 'grams', 'gm'].includes(u)) return 'g';
+  if (['ml', 'mlt', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(u)) return 'ml';
+  return null;
+}
+
 export async function getFoodPortions(fdcId) {
   const res = await axios.get(`${BASE_URL}/food/${fdcId}`, {
     params: { api_key: process.env.USDA_API_KEY },
@@ -82,6 +94,31 @@ export async function getFoodPortions(fdcId) {
       description: p.description ?? null,
       modifier: p.modifier ?? null,
     }));
+
+  // Branded records often have an empty foodPortions[] but still carry a household
+  // measure in householdServingFullText + servingSize (e.g. "1 Cup" / 240 ml).
+  // Surface that as a real portion before falling back to synthetic 100g.
+  // ml is treated 1:1 with grams, consistent with gramsToFlOz (29.57 ml/fl-oz) elsewhere.
+  if (portions.length === 0) {
+    const householdText = (data.householdServingFullText ?? '').trim();
+    const servingSize = data.servingSize;
+    let grams = null;
+    if (servingSize != null && servingSize > 0) {
+      const unit = normalizeServingUnit(data.servingSizeUnit);
+      // Both g and ml map 1:1 to grams (consistent with gramsToFlOz elsewhere).
+      if (unit === 'g' || unit === 'ml') grams = servingSize;
+      else console.warn(`getFoodPortions(${fdcId}): unrecognized servingSizeUnit ${JSON.stringify(data.servingSizeUnit)}; falling back to 100g`);
+    }
+    if (householdText && grams != null) {
+      portions.push({
+        label: householdText,
+        grams,
+        portionDescription: householdText,
+        description: null,
+        modifier: null,
+      });
+    }
+  }
 
   portions.push({ label: '100g', grams: 100 });
 
