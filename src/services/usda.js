@@ -41,7 +41,7 @@ async function searchOpenFoodFacts(query) {
 export async function getOpenFoodFactsPortions(offId) {
   const code = offId.slice('off_'.length);
   const res = await axios.get(`${OFF_BASE_URL}/api/v0/product/${code}.json`, {
-    params: { fields: 'product_name,nutriments,serving_size' },
+    params: { fields: 'product_name,nutriments,serving_size,serving_quantity,serving_quantity_unit' },
   });
 
   const product = res.data.product ?? {};
@@ -49,7 +49,25 @@ export async function getOpenFoodFactsPortions(offId) {
 
   const portions = [];
   const servingStr = product.serving_size;
-  if (servingStr) {
+
+  // Prefer OFF's structured serving_quantity (a clean number) over scraping the string.
+  // Resolve its unit through the SHARED normalizeServingUnit (same helper as the USDA
+  // fix) — ml maps 1:1 to grams, unknown units warn and fall through. The unit comes
+  // from serving_quantity_unit, or the trailing unit token of the serving_size string.
+  const qtyNum = product.serving_quantity != null ? parseFloat(product.serving_quantity) : NaN;
+  let grams = null;
+  if (Number.isFinite(qtyNum) && qtyNum > 0) {
+    const rawUnit = product.serving_quantity_unit
+      ?? (servingStr ? (servingStr.match(/[a-zA-Z]+/g) ?? []).pop() : null);
+    const unit = normalizeServingUnit(rawUnit);
+    if (unit === 'g' || unit === 'ml') grams = qtyNum;
+    else console.warn(`getOpenFoodFactsPortions(${offId}): unrecognized serving unit ${JSON.stringify(rawUnit)}; falling back`);
+  }
+
+  if (grams != null) {
+    portions.push({ label: servingStr || `${grams}g`, grams });
+  } else if (servingStr) {
+    // Last resort: legacy grams-only regex scrape when no usable serving_quantity.
     const gramsMatch = servingStr.match(/(\d+(?:\.\d+)?)\s*g/i);
     portions.push({ label: servingStr, grams: gramsMatch ? parseFloat(gramsMatch[1]) : 100 });
   }
