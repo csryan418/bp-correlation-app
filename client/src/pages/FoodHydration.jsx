@@ -126,6 +126,17 @@ function gramsToFlOz(grams) {
   return Math.round((grams / 29.57) * 2) / 2
 }
 
+// Human-readable portion name for BOTH the picker and the persisted portion_label —
+// the two MUST stay identical. `label` (amount+modifier) is deliberately NOT used:
+// USDA sometimes leaves an unresolved numeric measure-unit code in `modifier`
+// (e.g. "10205"), which would surface as a bare code. Guard: if the resolved name is
+// empty or a bare number, fall back to "serving" — never a raw code.
+function portionDisplayName(p) {
+  const name = String(p.portionDescription || p.description || p.modifier || '').trim()
+  if (!name || /^\d+$/.test(name)) return 'serving'
+  return name
+}
+
 function dedupePortions(portions) {
   const seen = new Set()
   return portions.filter(p => {
@@ -586,9 +597,12 @@ function FoodSection({ selectedDate }) {
     const baseMagnesium = confirmPortionsFailed ? confirmingItem.magnesium_mg : base?.magnesium_mg
     const qty = confirmPortionsFailed ? 1 : confirmQuantity
     const qtyNum = confirmPortionsFailed ? 1 : (parseFloat(confirmQuantity) || 1)
+    const selectedPortion = confirmPortions[confirmPortionIdx]
     const portionLabel = confirmPortionsFailed
       ? `${grams}g`
-      : (confirmPortions[confirmPortionIdx]?.label ?? '100g')
+      : (selectedPortion == null ? '100g'
+         : selectedPortion.label === '100g' ? '100g'
+         : portionDisplayName(selectedPortion))
     const computedSodiumPU    = calcMineral(baseSodium,    grams, 1)
     const computedPotassiumPU = calcMineral(basePotassium, grams, 1)
     const computedMagnesiumPU = calcMineral(baseMagnesium, grams, 1)
@@ -608,6 +622,7 @@ function FoodSection({ selectedDate }) {
       magnesiumPerUnit: finalMagnesiumPU,
       quantity: qty,
       portionLabel,
+      portionGrams: grams,
     }])
 
     if (voiceParsedQueue.length > 0) {
@@ -652,6 +667,8 @@ function FoodSection({ selectedDate }) {
           sodium_mg:    item.sodiumPerUnit    != null ? Math.round(item.sodiumPerUnit    * qty) : null,
           potassium_mg: item.potassiumPerUnit != null ? Math.round(item.potassiumPerUnit * qty) : null,
           magnesium_mg: item.magnesiumPerUnit != null ? Math.round(item.magnesiumPerUnit * qty) : null,
+          portion_grams: item.portionGrams ?? null,
+          portion_label: item.portionLabel ?? null,
           date: selectedDate,
           meal_type: activeMealType,
           meal_id: mealId,
@@ -1179,7 +1196,7 @@ function FoodSection({ selectedDate }) {
                                   <select className="fs-portion-select" value={confirmPortionIdx}
                                     onChange={e => { setConfirmPortionIdx(parseInt(e.target.value)); if (confirmNutrientsEdited) setConfirmServingChanged(true) }}>
                                     {confirmPortions.map((p, i) => {
-                                      const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                      const name = portionDisplayName(p)
                                       return (
                                         <option key={i} value={i}>
                                           {p.label === '100g'
@@ -1724,9 +1741,12 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
     const baseSodium    = confirmPortionsFailed ? confirmingItem.sodium_mg    : base?.sodium_mg
     const basePotassium = confirmPortionsFailed ? confirmingItem.potassium_mg : base?.potassium_mg
     const baseMagnesium = confirmPortionsFailed ? confirmingItem.magnesium_mg : base?.magnesium_mg
+    const selectedPortion = confirmPortions[confirmPortionIdx]
     const portionLabel = confirmPortionsFailed
       ? `${grams}g`
-      : (confirmPortions[confirmPortionIdx]?.label ?? '100g')
+      : (selectedPortion == null ? '100g'
+         : selectedPortion.label === '100g' ? '100g'
+         : portionDisplayName(selectedPortion))
 
     setMealBasket(prev => [...prev, {
       key: `${confirmingItem.fdcId ?? 'manual'}-${Date.now()}`,
@@ -1907,7 +1927,7 @@ function CreateSavedMealPanel({ onSave, onCancel }) {
                                 <select className="fs-portion-select" value={confirmPortionIdx}
                                   onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
                                   {confirmPortions.map((p, i) => {
-                                    const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                    const name = portionDisplayName(p)
                                     return (
                                       <option key={i} value={i}>
                                         {p.label === '100g'
@@ -2059,9 +2079,12 @@ function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }
     if (!confirmingItem) return
     const grams = confirmPortionsFailed ? confirmGramsInput : (confirmPortions[confirmPortionIdx]?.grams ?? 100)
     const qty   = confirmPortionsFailed ? 1 : confirmQuantity
+    const selectedPortion = confirmPortions[confirmPortionIdx]
     const portionLabel = confirmPortionsFailed
       ? `${grams}g`
-      : (confirmPortions[confirmPortionIdx]?.label ?? '100g')
+      : (selectedPortion == null ? '100g'
+         : selectedPortion.label === '100g' ? '100g'
+         : portionDisplayName(selectedPortion))
     const base = confirmBasePer100g ?? confirmingItem
     const baseSodium    = confirmPortionsFailed ? confirmingItem.sodium_mg    : base?.sodium_mg
     const basePotassium = confirmPortionsFailed ? confirmingItem.potassium_mg : base?.potassium_mg
@@ -2214,7 +2237,7 @@ function MealItemSearchPanel({ onSelect, onCancel, actionLabel = 'Add to meal' }
                               <select className="fs-portion-select" value={confirmPortionIdx}
                                 onChange={e => setConfirmPortionIdx(parseInt(e.target.value))}>
                                 {confirmPortions.map((p, i) => {
-                                  const name = p.portionDescription || p.description || p.modifier || 'Serving'
+                                  const name = portionDisplayName(p)
                                   return (
                                     <option key={i} value={i}>
                                       {p.label === '100g' ? '100g'

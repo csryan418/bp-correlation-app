@@ -26,7 +26,7 @@ export async function getPortions(req, res) {
 }
 
 export function logFood(req, res) {
-  const { fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, date, meal_type, meal_id } = req.body;
+  const { fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, portion_grams, portion_label, date, meal_type, meal_id } = req.body;
   if (!description || !date) {
     return res.status(400).json({ error: 'description and date are required' });
   }
@@ -36,8 +36,8 @@ export function logFood(req, res) {
   const result = getDb()
     .prepare(
       `INSERT INTO food_log
-        (date, meal_type, meal_id, logged_time, food_name, serving_size, fdc_id, sodium_mg, potassium_mg, magnesium_mg, calories)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+        (date, meal_type, meal_id, logged_time, food_name, serving_size, fdc_id, sodium_mg, potassium_mg, magnesium_mg, portion_grams, portion_label, calories)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
     )
     .run(
       date,
@@ -50,6 +50,8 @@ export function logFood(req, res) {
       sodium_mg    ?? null,
       potassium_mg ?? null,
       magnesium_mg ?? null,
+      portion_grams ?? null,
+      portion_label ?? null,
     );
 
   const row = getDb()
@@ -137,8 +139,8 @@ export function copyMeal(req, res) {
   const newMealId = Date.now();
   const insertStmt = db.prepare(
     `INSERT INTO food_log
-      (date, meal_type, meal_id, logged_time, food_name, serving_size, fdc_id, sodium_mg, potassium_mg, magnesium_mg, calories)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (date, meal_type, meal_id, logged_time, food_name, serving_size, fdc_id, sodium_mg, potassium_mg, magnesium_mg, portion_grams, portion_label, calories)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const created = db.transaction(() =>
@@ -146,7 +148,8 @@ export function copyMeal(req, res) {
       const result = insertStmt.run(
         target_date, destMealType, newMealId, loggedTime,
         r.food_name, r.serving_size, r.fdc_id,
-        r.sodium_mg, r.potassium_mg, r.magnesium_mg, r.calories
+        r.sodium_mg, r.potassium_mg, r.magnesium_mg,
+        r.portion_grams, r.portion_label, r.calories
       );
       return db
         .prepare('SELECT *, food_name AS description FROM food_log WHERE id = ?')

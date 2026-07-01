@@ -23,10 +23,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
-  logFood: ({ fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, date, meal_type, meal_id }) =>
+  logFood: ({ fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, portion_grams, portion_label, date, meal_type, meal_id }) =>
     request('/food/log', {
       method: 'POST',
-      body: JSON.stringify({ fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, date, meal_type, meal_id }),
+      body: JSON.stringify({ fdcId, description, servings, sodium_mg, potassium_mg, magnesium_mg, portion_grams, portion_label, date, meal_type, meal_id }),
     }),
   getFoodLog: (date) => request(`/food/log?date=${date}`),
   getFoodPortions: (fdcId) => request(`/food/portions/${fdcId}`),
